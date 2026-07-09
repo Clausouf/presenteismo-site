@@ -1,42 +1,60 @@
-export type PerfilUsuario = 'Gerente' | 'Treinamento' | 'Recrutamento';
+// Enums para manter a consistência
 export type StatusComum = 'Ativo' | 'Inativo';
 export type StatusTurma = 'Em Andamento' | 'Finalizada';
-export type StatusColaborador = 'Ativo' | 'Desligado' | 'Desistente';
-export type TipoRegistroDiario = 'Presença' | 'Falta Injustificada' | 'Atestado' | 'Sem Passagem' | 'Problema Pessoal' | 'Declaração' | 'Desligamento pela Empresa' | 'Desligamento a Pedido' | 'Desistência' | 'Folga';
+export type CargoEquipe = 'Analista' | 'Instrutor';
 
+export type TipoRegistroDiario = 
+  | 'Presença' 
+  | 'Falta Injustificada' 
+  | 'Falta Integração' 
+  | 'Desistência' 
+  | 'Desligamento a Pedido' 
+  | 'Atestado' 
+  | 'Observação';
+
+// Estruturas das Tabelas
 export interface Usuario {
   id: string;
   matricula: string;
   nome: string;
-  perfil: PerfilUsuario;
+  perfil: 'Gerente' | 'Treinamento' | 'Recrutamento';
+  status: StatusComum;
+}
+
+export interface Equipe {
+  matricula: string;
+  nome: string;
+  cargo: CargoEquipe;
   status: StatusComum;
 }
 
 export interface Turma {
-  id: string;
   numero_turma: string;
-  operacao_id: string;
-  analista_id: string;
-  instrutor_id: string;
-  data_inicio: string;
-  data_fim: string;
-  dias_treinamento: number;
-  dias_alo: number;
+  responsavel_matricula: string;
   status: StatusTurma;
+  data_inicio: string;
+  data_alo: string;
+  data_fim: string;
+  horario: string;
+  operacao_nome: string;
+  sala: string;
 }
 
 export interface Colaborador {
-  id: string;
-  turma_id: string;
   matricula: string;
   nome: string;
   cpf: string;
   data_admissao: string;
   jornada: string;
   grupo_30_horas: boolean;
-  status: StatusColaborador;
+  status: StatusComum;
+  turma_numero: string;
 }
-// Correção para o build do Cloudflare
-export type Operacao = any;
-export type Analista = any;
-export type Instrutor = any;
+
+export interface DiarioPresenca {
+  turma_numero: string;
+  matricula: string;
+  colaborador_nome: string;
+  data: string;
+  tipo_registro: TipoRegistroDiario;
+}
