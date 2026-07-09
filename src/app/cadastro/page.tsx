@@ -94,10 +94,8 @@ export default function CadastroTurmaPage() {
     linhas.forEach((linha) => {
       if (!linha.trim()) return;
 
-      // O Excel separa colunas com tabulação ("\t") ao copiar e colar
       const colunas = linha.split('\t');
 
-      // Mapeamento esperado: Matrícula | Nome | CPF | Data Admissão | Horário/Jornada | 30h (S/N)
       const matricula = colunas[0]?.trim() || '';
       const nome = colunas[1]?.trim() || '';
       const cpf = colunas[2]?.trim() || '';
@@ -127,7 +125,6 @@ export default function CadastroTurmaPage() {
     }
   };
 
-  // Funções Utilitárias para Tratamento e Máscaras
   const formatCPF = (rawCpf: string) => {
     const clean = rawCpf.replace(/\D/g, '');
     if (clean.length !== 11) return clean;
@@ -136,7 +133,6 @@ export default function CadastroTurmaPage() {
 
   const formatDateForInput = (rawDate: string) => {
     if (!rawDate) return '';
-    // Converte datas no formato brasileiro DD/MM/AAAA para AAAA-MM-DD exigido pelo campo date do html
     const parts = rawDate.split('/');
     if (parts.length === 3) {
       const day = parts[0].padStart(2, '0');
@@ -147,12 +143,10 @@ export default function CadastroTurmaPage() {
     return rawDate;
   };
 
-  // Exclusão manual de linha do lote
   const handleRemoveColaborador = (index: number) => {
     setColaboradores(colaboradores.filter((_, idx) => idx !== index));
   };
 
-  // Adição de linha manual em branco
   const handleAddColaboradorManual = () => {
     setColaboradores([
       ...colaboradores,
@@ -167,34 +161,29 @@ export default function CadastroTurmaPage() {
     ]);
   };
 
-  // Monitor de alteração das linhas da tabela manual
   const handleUpdateColaboradorRow = (index: number, field: keyof NovoColaboradorItem, val: any) => {
     const updated = [...colaboradores];
     updated[index] = { ...updated[index], [field]: val };
     setColaboradores(updated);
   };
 
-  // Ação Principal: Salvar Turma + Lote de Operadores no Banco de dados
   const handleSaveAll = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
-    // Validação da Turma
     if (!numeroTurma || !operacaoId || !analistaId || !instrutorId || !dataInicio || !dataFim) {
       setError('Por favor, preencha todas as informações cadastrais da turma.');
       setLoading(false);
       return;
     }
 
-    // Validação da Lista de Operadores
     if (colaboradores.length === 0) {
       setError('É obrigatório incluir pelo menos 1 operador na turma para realizar a criação.');
       setLoading(false);
       return;
     }
 
-    // Validação profunda das colunas inseridas para evitar erros de constraint no Postgres
     for (let i = 0; i < colaboradores.length; i++) {
       const c = colaboradores[i];
       if (!c.matricula.trim() || !c.nome.trim() || !c.cpf.trim() || !c.data_admissao) {
@@ -205,7 +194,6 @@ export default function CadastroTurmaPage() {
     }
 
     try {
-      // 1. Inserir a nova Turma
       const { data: turmaCriada, error: errorTurma } = await supabase
         .from('turmas')
         .insert({
@@ -233,25 +221,22 @@ export default function CadastroTurmaPage() {
         return;
       }
 
-      // 2. Preparar os operadores com a FK (turma_id) recém criada
       const loteInclusao = colaboradores.map((c) => ({
         turma_id: turmaCriada.id,
         matricula: c.matricula.trim(),
         nome: c.nome.trim(),
-        cpf: c.cpf.replace(/\D/g, ''), // remove pontos/hifens do CPF para o banco
+        cpf: c.cpf.replace(/\D/g, ''),
         data_admissao: c.data_admissao,
         jornada: c.jornada,
         grupo_30_horas: c.grupo_30_horas,
         status: 'Ativo'
       }));
 
-      // 3. Inserir todos os operadores em lote (Bulk Insert)
       const { error: errorColaboradores } = await supabase
         .from('colaboradores')
         .insert(loteInclusao);
 
       if (errorColaboradores) {
-        // Ação de Rollback Manual se a inserção de colaboradores quebrar
         await supabase.from('turmas').delete().eq('id', turmaCriada.id);
         
         if (errorColaboradores.code === '23505') {
@@ -263,7 +248,6 @@ export default function CadastroTurmaPage() {
         return;
       }
 
-      // Sucesso Absoluto
       setSuccessTurmaId(turmaCriada.id);
 
     } catch (err) {
@@ -282,7 +266,6 @@ export default function CadastroTurmaPage() {
     );
   }
 
-  // Tela de Sucesso Completo com Botões de Navegação Direta
   if (successTurmaId) {
     return (
       <div className="max-w-xl mx-auto bg-white border border-slate-100 rounded-2xl p-8 text-center shadow-xl my-8 animate-fadeIn">
@@ -297,7 +280,6 @@ export default function CadastroTurmaPage() {
         <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
           <button
             onClick={() => {
-              // Reseta o formulário
               setSuccessTurmaId(null);
               setNumeroTurma('');
               setColaboradores([]);
@@ -321,7 +303,6 @@ export default function CadastroTurmaPage() {
 
   return (
     <div className="space-y-6">
-      {/* Cabeçalho da Tela */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Criação de Turmas</h1>
@@ -338,7 +319,6 @@ export default function CadastroTurmaPage() {
 
       <form onSubmit={handleSaveAll} className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         
-        {/* COLUNA Esquerda: Cadastro Básico da Turma */}
         <div className="lg:col-span-1 bg-white border border-slate-200 rounded-xl p-5 md:p-6 space-y-4 shadow-sm">
           <div className="flex items-center gap-2 border-b border-slate-100 pb-3 mb-2">
             <PlusCircle size={18} className="text-blue-500" />
@@ -367,7 +347,7 @@ export default function CadastroTurmaPage() {
             >
               <option value="">Selecione...</option>
               {operacoes.map((op) => (
-                <option key={op.id} value={op.id}>{op.codigo_operacao} - {op.nome}</option>
+                <option key={op.id} value={op.id}>{op.nome}</option>
               ))}
             </select>
           </div>
@@ -449,10 +429,8 @@ export default function CadastroTurmaPage() {
           </div>
         </div>
 
-        {/* COLUNA Direita: Caixa de Importação e Tabela de Operadores */}
         <div className="lg:col-span-2 space-y-6">
           
-          {/* Caixa Inteligente de Copiar e Colar (Excel) */}
           <div className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-sm">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
               <div className="flex items-center gap-2">
@@ -469,166 +447,4 @@ export default function CadastroTurmaPage() {
             </div>
 
             {showPasteHelper && (
-              <div className="mb-4 text-xs bg-slate-50 border border-slate-200 text-slate-600 p-4 rounded-lg leading-relaxed space-y-1.5">
-                <p className="font-semibold text-slate-800">Siga a ordem de colunas na sua planilha do Excel antes de copiar:</p>
-                <p className="text-blue-600 font-mono">1. Matrícula | 2. Nome | 3. CPF | 4. Data Admissão (DD/MM/AAAA) | 5. Horário/Jornada | 6. 30 Horas? (Sim/Não)</p>
-                <p className="mt-1 text-slate-500">Selecione e copie as linhas do Excel, cole na caixa abaixo e clique em <strong className="text-slate-700">"Anexar Linhas"</strong>.</p>
-              </div>
-            )}
-
-            <div className="space-y-3">
-              <textarea
-                value={excelPasteText}
-                onChange={(e) => setExcelPasteText(e.target.value)}
-                placeholder="Cole as colunas de dados copiadas da planilha Excel diretamente aqui..."
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-mono h-24 resize-none"
-              />
-              <div className="flex justify-between items-center">
-                <p className="text-xs text-slate-400">Total no lote pronto: <strong>{colaboradores.length}</strong></p>
-                <button
-                  type="button"
-                  onClick={handleProcessExcelPaste}
-                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg text-xs transition-colors"
-                >
-                  Anexar Linhas do Lote
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Grid de Visualização e Ajustes Finos (Spreadsheet-like) */}
-          <div className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3 mb-4">
-              <div className="flex items-center gap-2">
-                <Users size={18} className="text-blue-500" />
-                <h2 className="font-semibold text-slate-900">Lista dos Operadores Vinculados</h2>
-              </div>
-              <button
-                type="button"
-                onClick={handleAddColaboradorManual}
-                className="px-3 py-1.5 text-xs border border-blue-200 text-blue-600 hover:bg-blue-50 rounded-lg font-semibold flex items-center gap-1 transition-colors self-start"
-              >
-                + Adicionar Manualmente
-              </button>
-            </div>
-
-            {colaboradores.length === 0 ? (
-              <div className="text-center py-10 border border-dashed border-slate-200 rounded-lg">
-                <Users size={24} className="mx-auto text-slate-300" />
-                <p className="text-sm font-medium text-slate-500 mt-2">Nenhum operador adicionado.</p>
-                <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">Use a caixa acima de copiar e colar para popular o lote em segundos.</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto border border-slate-200 rounded-lg max-h-96">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-bold border-b border-slate-200 sticky top-0">
-                    <tr>
-                      <th className="p-3 w-20">Matrícula</th>
-                      <th className="p-3">Nome Completo</th>
-                      <th className="p-3 w-28">CPF</th>
-                      <th className="p-3 w-28">Admissão</th>
-                      <th className="p-3">Jornada/Horário</th>
-                      <th className="p-3 text-center w-16">30h</th>
-                      <th className="p-3 text-center w-10">Ação</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {colaboradores.map((col, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50/40">
-                        <td className="p-2">
-                          <input
-                            type="text"
-                            value={col.matricula}
-                            onChange={(e) => handleUpdateColaboradorRow(idx, 'matricula', e.target.value)}
-                            className="w-full bg-transparent border-0 border-b border-transparent focus:border-blue-500 focus:ring-0 p-1"
-                            placeholder="38823"
-                            required
-                          />
-                        </td>
-                        <td className="p-2">
-                          <input
-                            type="text"
-                            value={col.nome}
-                            onChange={(e) => handleUpdateColaboradorRow(idx, 'nome', e.target.value)}
-                            className="w-full bg-transparent border-0 border-b border-transparent focus:border-blue-500 focus:ring-0 p-1 font-medium"
-                            placeholder="Mariana Novais Mira"
-                            required
-                          />
-                        </td>
-                        <td className="p-2">
-                          <input
-                            type="text"
-                            value={col.cpf}
-                            onChange={(e) => handleUpdateColaboradorRow(idx, 'cpf', formatCPF(e.target.value))}
-                            className="w-full bg-transparent border-0 border-b border-transparent focus:border-blue-500 focus:ring-0 p-1"
-                            placeholder="000.000.000-00"
-                            maxLength={14}
-                            required
-                          />
-                        </td>
-                        <td className="p-2">
-                          <input
-                            type="date"
-                            value={col.data_admissao}
-                            onChange={(e) => handleUpdateColaboradorRow(idx, 'data_admissao', e.target.value)}
-                            className="w-full bg-transparent border-0 border-b border-transparent focus:border-blue-500 focus:ring-0 p-1"
-                            required
-                          />
-                        </td>
-                        <td className="p-2">
-                          <input
-                            type="text"
-                            value={col.jornada}
-                            onChange={(e) => handleUpdateColaboradorRow(idx, 'jornada', e.target.value)}
-                            className="w-full bg-transparent border-0 border-b border-transparent focus:border-blue-500 focus:ring-0 p-1"
-                            placeholder="Ope Seg-Sab 13:50 - 20:10"
-                            required
-                          />
-                        </td>
-                        <td className="p-2 text-center">
-                          <input
-                            type="checkbox"
-                            checked={col.grupo_30_horas}
-                            onChange={(e) => handleUpdateColaboradorRow(idx, 'grupo_30_horas', e.target.checked)}
-                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                          />
-                        </td>
-                        <td className="p-2 text-center">
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveColaborador(idx)}
-                            className="text-rose-500 hover:text-rose-600 p-1 hover:bg-rose-50 rounded"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Botão de Cadastro Central do Formulário */}
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl text-sm shadow-md shadow-blue-500/10 flex items-center gap-2 disabled:opacity-50 transition-all"
-            >
-              {loading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Salvando Turma e Operadores...
-                </>
-              ) : (
-                'Salvar Turma e Lote de Operadores'
-              )}
-            </button>
-          </div>
-        </div>
-      </form>
-    </div>
-  );
-}
+              <div className="mb-4 text-xs bg-slate-5
