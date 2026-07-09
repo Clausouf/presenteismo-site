@@ -1,5 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'export',
+  images: {
+    unoptimized: true,
+  },
   typescript: {
     // Ignora erros do TypeScript no build para liberar o deploy
     ignoreBuildErrors: true,
