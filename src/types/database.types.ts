@@ -36,3 +36,7 @@ export interface Colaborador {
   grupo_30_horas: boolean;
   status: StatusColaborador;
 }
+// Correção para o build do Cloudflare
+export type Operacao = any;
+export type Analista = any;
+export type Instrutor = any;
