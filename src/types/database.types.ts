@@ -36,7 +36,7 @@ export interface Turma {
   data_alo: string;
   data_fim: string;
   horario: string;
-  operacao_nome: string;
+  operacao_id: number; // Alterado para number (conectado à tabela operacoes)
   sala: string;
 }
 
