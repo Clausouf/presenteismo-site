@@ -10,6 +10,7 @@ export function middleware(request: NextRequest) {
   const isPublicRoute = pathname === '/login';
 
   // Cenário A: Não está logado e tenta acessar qualquer página interna -> Chuta pro Login
+  // Isso agora inclui a raiz '/', que antes o matcher ignorava
   if (!sessionToken && !isPublicRoute) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
@@ -22,14 +23,10 @@ export function middleware(request: NextRequest) {
   return NextResponse.next();
 }
 
-// Configuração de escopo: o middleware só vai rodar quando o usuário tentar acessar essas rotas
+// Configuração de escopo: Agora cobre todas as rotas corretamente 
+// e ignora apenas arquivos estáticos e imagens, evitando erros de carregamento
 export const config = {
   matcher: [
-    '/dashboard/:path*',
-    '/cadastro/:path*',
-    '/turmas/:path*',
-    '/calendario/:path*',
-    '/criar-adm/:path*',
-    '/login'
+    '/((?!api|_next/static|_next/image|favicon.ico).*)',
   ],
 };
