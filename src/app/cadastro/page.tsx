@@ -6,7 +6,6 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/use-auth';
-import { Trash2 } from 'lucide-react';
 
 interface NovoColaboradorItem {
   matricula: string;
@@ -25,7 +24,7 @@ export default function CadastroTurmaPage() {
   const [operacoes, setOperacoes] = useState<any[]>([]);
 
   const [numeroTurma, setNumeroTurma] = useState('');
-  const [operacaoNome, setOperacaoNome] = useState(''); // Alterado para string conforme nova tabela
+  const [operacaoId, setOperacaoId] = useState(''); // Agora armazena o ID da operação
   const [responsavelMatricula, setResponsavelMatricula] = useState('');
   const [dataInicio, setDataInicio] = useState('');
   const [dataAlo, setDataAlo] = useState('');
@@ -34,7 +33,6 @@ export default function CadastroTurmaPage() {
   const [sala, setSala] = useState('');
 
   const [colaboradores, setColaboradores] = useState<NovoColaboradorItem[]>([]);
-  const [excelPasteText, setExcelPasteText] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +43,7 @@ export default function CadastroTurmaPage() {
       try {
         const [resEquipe, resOps] = await Promise.all([
           supabase.from('equipe').select('*'),
-          supabase.from('operacoes').select('*')
+          supabase.from('operacoes').select('*') // Certifique-se que esta tabela tenha 'id' e 'nome'
         ]);
         if (resEquipe.data) setEquipe(resEquipe.data);
         if (resOps.data) setOperacoes(resOps.data);
@@ -64,13 +62,13 @@ export default function CadastroTurmaPage() {
     setError(null);
 
     try {
-      // 1. Inserir a Turma
+      // 1. Inserir a Turma (utilizando operacao_id numérico)
       const { error: errorTurma } = await supabase
         .from('turmas')
         .insert({
           numero_turma: numeroTurma.trim(),
           responsavel_matricula: responsavelMatricula,
-          operacao_nome: operacaoNome,
+          operacao_id: Number(operacaoId), // Convertendo para Number conforme alteração no banco
           data_inicio: dataInicio,
           data_alo: dataAlo,
           data_fim: dataFim,
@@ -81,9 +79,9 @@ export default function CadastroTurmaPage() {
 
       if (errorTurma) throw errorTurma;
 
-      // 2. Inserir os Colaboradores vinculados ao numero_turma
+      // 2. Inserir os Colaboradores
       const loteInclusao = colaboradores.map((c) => ({
-        turma_numero: numeroTurma.trim(), // Link via FK
+        turma_numero: numeroTurma.trim(),
         matricula: c.matricula.trim(),
         nome: c.nome.trim(),
         cpf: c.cpf.replace(/\D/g, ''),
@@ -131,7 +129,12 @@ export default function CadastroTurmaPage() {
           </select>
 
           <label className="block text-sm font-bold">Operação *</label>
-          <input type="text" value={operacaoNome} onChange={(e) => setOperacaoNome(e.target.value)} className="w-full border rounded p-2" required />
+          <select value={operacaoId} onChange={(e) => setOperacaoId(e.target.value)} className="w-full border rounded p-2" required>
+            <option value="">Selecione a operação...</option>
+            {operacoes.map((op) => (
+              <option key={op.id} value={op.id}>{op.nome}</option>
+            ))}
+          </select>
 
           <label className="block text-sm font-bold">Data Início</label>
           <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className="w-full border rounded p-2" />
@@ -144,8 +147,8 @@ export default function CadastroTurmaPage() {
         </div>
 
         <div className="lg:col-span-2 space-y-4">
-           {/* ... manter a lógica de colaboradores conforme estava ... */}
-          <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white p-3 rounded-lg font-bold">
+           {/* Mantenha o seu código de colaboradores aqui */}
+           <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white p-3 rounded-lg font-bold">
             {loading ? 'Salvando...' : 'Salvar Turma'}
           </button>
         </div>
