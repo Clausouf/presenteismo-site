@@ -1,58 +1,35 @@
-import { createServerClient } from '@supabase/ssr';
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 
-export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
-  });
+export function middleware(request: NextRequest) {
+  // Pega o token de sessão do Supabase direto dos cookies do navegador
+  const sessionToken = request.cookies.get('sb-access-token') || request.cookies.get('supabase-auth-token');
+  const { pathname } = request.nextUrl;
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  // Rota pública (única que não exige login)
+  const isPublicRoute = pathname === '/login';
 
-  if (!supabaseUrl || !supabaseAnonKey) return response;
-
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
-      },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) =>
-          request.cookies.set({ name, value, ...options })
-        );
-        response = NextResponse.next({
-          request: {
-            headers: request.headers,
-          },
-        });
-        cookiesToSet.forEach(({ name, value, options }) =>
-          response.cookies.set({ name, value, ...options })
-        );
-      },
-    },
-  });
-
-  const { data: { session } } = await supabase.auth.getSession();
-  const url = request.nextUrl.clone();
-  
-  const isLoginRoute = url.pathname === '/login';
-  const isCreateAdminRoute = url.pathname === '/criar-adm';
-
-  if (!session && !isLoginRoute && !isCreateAdminRoute) {
-    url.pathname = '/login';
-    return NextResponse.redirect(url);
+  // Cenário A: Não está logado e tenta acessar qualquer página interna -> Chuta pro Login
+  if (!sessionToken && !isPublicRoute) {
+    return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  if (session && isLoginRoute) {
-    url.pathname = '/dashboard';
-    return NextResponse.redirect(url);
+  // Cenário B: Já está logado e tenta forçar a barra indo pro Login -> Joga pro Dashboard
+  if (sessionToken && isPublicRoute) {
+    return NextResponse.redirect(new URL('/dashboard', request.url));
   }
 
-  return response;
+  return NextResponse.next();
 }
 
+// Configuração de escopo: o middleware só vai rodar quando o usuário tentar acessar essas rotas
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+  matcher: [
+    '/dashboard/:path*',
+    '/cadastro/:path*',
+    '/turmas/:path*',
+    '/calendario/:path*',
+    '/criar-adm/:path*',
+    '/login'
+  ],
 };
