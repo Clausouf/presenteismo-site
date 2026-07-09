@@ -3,9 +3,8 @@
 export const runtime = 'edge';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/hooks/use-auth';
+import { Trash2 } from 'lucide-react';
 
 interface NovoColaboradorItem {
   matricula: string;
@@ -17,22 +16,19 @@ interface NovoColaboradorItem {
 }
 
 export default function CadastroTurmaPage() {
-  const router = useRouter();
-  const { user } = useAuth();
-
   const [equipe, setEquipe] = useState<any[]>([]);
   const [operacoes, setOperacoes] = useState<any[]>([]);
 
   const [numeroTurma, setNumeroTurma] = useState('');
-  const [operacaoId, setOperacaoId] = useState(''); // Agora armazena o ID da operação
+  const [operacaoId, setOperacaoId] = useState(''); 
   const [responsavelMatricula, setResponsavelMatricula] = useState('');
   const [dataInicio, setDataInicio] = useState('');
   const [dataAlo, setDataAlo] = useState('');
   const [dataFim, setDataFim] = useState('');
-  const [horario, setHorario] = useState('');
   const [sala, setSala] = useState('');
 
   const [colaboradores, setColaboradores] = useState<NovoColaboradorItem[]>([]);
+  const [excelPasteText, setExcelPasteText] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +39,7 @@ export default function CadastroTurmaPage() {
       try {
         const [resEquipe, resOps] = await Promise.all([
           supabase.from('equipe').select('*'),
-          supabase.from('operacoes').select('*') // Certifique-se que esta tabela tenha 'id' e 'nome'
+          supabase.from('operacoes').select('*')
         ]);
         if (resEquipe.data) setEquipe(resEquipe.data);
         if (resOps.data) setOperacoes(resOps.data);
@@ -56,23 +52,39 @@ export default function CadastroTurmaPage() {
     loadData();
   }, []);
 
+  // Lógica para processar o texto colado do Excel
+  const handleParseExcel = (text: string) => {
+    const lines = text.split('\n').filter(line => line.trim() !== '');
+    const novosColaboradores: NovoColaboradorItem[] = lines.map(line => {
+      const [matricula, nome, cpf, data_admissao, jornada, grupo_30] = line.split('\t');
+      return {
+        matricula: matricula || '',
+        nome: nome || '',
+        cpf: cpf || '',
+        data_admissao: data_admissao || '',
+        jornada: jornada || 'Integral',
+        grupo_30_horas: grupo_30?.trim().toLowerCase() === 'sim' || false
+      };
+    });
+    setColaboradores(novosColaboradores);
+  };
+
   const handleSaveAll = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
     try {
-      // 1. Inserir a Turma (utilizando operacao_id numérico)
+      // 1. Inserir a Turma
       const { error: errorTurma } = await supabase
         .from('turmas')
         .insert({
           numero_turma: numeroTurma.trim(),
           responsavel_matricula: responsavelMatricula,
-          operacao_id: Number(operacaoId), // Convertendo para Number conforme alteração no banco
+          operacao_id: Number(operacaoId),
           data_inicio: dataInicio,
           data_alo: dataAlo,
           data_fim: dataFim,
-          horario: horario,
           sala: sala,
           status: 'Em Andamento'
         });
@@ -118,38 +130,63 @@ export default function CadastroTurmaPage() {
       <h1 className="text-2xl font-bold">Criação de Turmas</h1>
       {error && <div className="p-4 bg-rose-50 text-rose-700 rounded-lg">{error}</div>}
       <form onSubmit={handleSaveAll} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Coluna Esquerda: Dados da Turma */}
         <div className="lg:col-span-1 bg-white p-6 rounded-xl border space-y-4">
-          <label className="block text-sm font-bold">Número da Turma *</label>
-          <input type="text" value={numeroTurma} onChange={(e) => setNumeroTurma(e.target.value)} className="w-full border rounded p-2" required />
-          
-          <label className="block text-sm font-bold">Responsável *</label>
-          <select value={responsavelMatricula} onChange={(e) => setResponsavelMatricula(e.target.value)} className="w-full border rounded p-2" required>
-            <option value="">Selecione...</option>
-            {equipe.map((membro) => <option key={membro.matricula} value={membro.matricula}>{membro.nome} ({membro.cargo})</option>)}
-          </select>
-
-          <label className="block text-sm font-bold">Operação *</label>
-          <select value={operacaoId} onChange={(e) => setOperacaoId(e.target.value)} className="w-full border rounded p-2" required>
-            <option value="">Selecione a operação...</option>
-            {operacoes.map((op) => (
-              <option key={op.id} value={op.id}>{op.nome}</option>
-            ))}
-          </select>
-
-          <label className="block text-sm font-bold">Data Início</label>
-          <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className="w-full border rounded p-2" />
-          
-          <label className="block text-sm font-bold">Data 1º Alo</label>
-          <input type="date" value={dataAlo} onChange={(e) => setDataAlo(e.target.value)} className="w-full border rounded p-2" />
-
-          <label className="block text-sm font-bold">Sala</label>
-          <input type="text" value={sala} onChange={(e) => setSala(e.target.value)} className="w-full border rounded p-2" />
+            {/* ... seus inputs de turma ... */}
+            <label className="block text-sm font-bold">Número da Turma *</label>
+            <input type="text" value={numeroTurma} onChange={(e) => setNumeroTurma(e.target.value)} className="w-full border rounded p-2" required />
+            <label className="block text-sm font-bold">Responsável *</label>
+            <select value={responsavelMatricula} onChange={(e) => setResponsavelMatricula(e.target.value)} className="w-full border rounded p-2" required>
+                <option value="">Selecione...</option>
+                {equipe.map((m) => <option key={m.matricula} value={m.matricula}>{m.nome}</option>)}
+            </select>
+            <label className="block text-sm font-bold">Operação *</label>
+            <select value={operacaoId} onChange={(e) => setOperacaoId(e.target.value)} className="w-full border rounded p-2" required>
+                <option value="">Selecione...</option>
+                {operacoes.map((o) => <option key={o.id} value={o.id}>{o.nome}</option>)}
+            </select>
         </div>
 
+        {/* Coluna Direita: Importação em Lote */}
         <div className="lg:col-span-2 space-y-4">
-           {/* Mantenha o seu código de colaboradores aqui */}
-           <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white p-3 rounded-lg font-bold">
-            {loading ? 'Salvando...' : 'Salvar Turma'}
+          <div className="bg-white p-6 rounded-xl border">
+            <h2 className="font-bold mb-2">Importar Operadores (Cole do Excel)</h2>
+            <textarea 
+              className="w-full h-32 border rounded p-2 text-sm"
+              placeholder="Cole aqui os dados copiados do Excel (Matrícula, Nome, CPF, Data, Jornada, Grupo 30h)..."
+              value={excelPasteText}
+              onChange={(e) => {
+                setExcelPasteText(e.target.value);
+                handleParseExcel(e.target.value);
+              }}
+            />
+          </div>
+
+          {colaboradores.length > 0 && (
+            <div className="bg-white rounded-xl border overflow-hidden">
+                <table className="w-full text-xs">
+                    <thead className="bg-slate-100">
+                        <tr>
+                            <th className="p-2">Matrícula</th>
+                            <th className="p-2">Nome</th>
+                            <th className="p-2">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {colaboradores.map((c, idx) => (
+                            <tr key={idx} className="border-b">
+                                <td className="p-2">{c.matricula}</td>
+                                <td className="p-2">{c.nome}</td>
+                                <td className="p-2"><button type="button" onClick={() => setColaboradores(colaboradores.filter((_, i) => i !== idx))}><Trash2 size={14} className="text-red-500"/></button></td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+          )}
+
+          <button type="submit" disabled={loading || colaboradores.length === 0} className="w-full bg-blue-600 text-white p-3 rounded-lg font-bold disabled:bg-gray-300">
+            {loading ? 'Salvando...' : 'Salvar Turma e Operadores'}
           </button>
         </div>
       </form>
