@@ -3,8 +3,6 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/hooks/use-auth';
-import { BookOpen, Calendar, User, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Info } from 'lucide-react';
 import { Turma, Colaborador, DiarioPresenca, TipoRegistroDiario } from '@/types/database.types';
 
 const STATUS_OPTIONS: TipoRegistroDiario[] = [
@@ -28,15 +26,12 @@ function DiarioPresencaContent() {
 
   const [turmas, setTurmas] = useState<Turma[]>([]);
   const [selectedTurmaNumero, setSelectedTurmaNumero] = useState<string>('');
-  const [currentTurma, setCurrentTurma] = useState<Turma | null>(null);
   const [colaboradores, setColaboradores] = useState<Colaborador[]>([]);
   const [presencas, setPresencas] = useState<Record<string, DiarioPresenca>>({}); 
-
   const [datasLista, setDatasLista] = useState<string[]>([]);
-  const [mobileActiveDate, setMobileActiveDate] = useState<string>('');
+  
   const [loadingTurmas, setLoadingTurmas] = useState(true);
   const [loadingDiario, setLoadingDiario] = useState(false);
-  const [savingCell, setSavingCell] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -58,14 +53,13 @@ function DiarioPresencaContent() {
 
     async function loadDiario() {
       setLoadingDiario(true);
+      setError(null);
       try {
         const { data: turma } = await supabase.from('turmas').select('*').eq('numero_turma', selectedTurmaNumero).single();
         if (!turma) return;
-        setCurrentTurma(turma);
 
         const datas = gerarArrayDatas(turma.data_inicio, turma.data_fim);
         setDatasLista(datas);
-        if (datas.length > 0) setMobileActiveDate(datas[0]);
 
         const { data: colabs } = await supabase.from('colaboradores').select('*').eq('turma_numero', selectedTurmaNumero).order('nome');
         setColaboradores(colabs || []);
@@ -74,7 +68,7 @@ function DiarioPresencaContent() {
         const mapa: Record<string, DiarioPresenca> = {};
         regs?.forEach(r => mapa[`${r.matricula}_${r.data}`] = r);
         setPresencas(mapa);
-      } catch (err) { setError('Erro ao carregar dados.'); } finally { setLoadingDiario(false); }
+      } catch (err) { setError('Erro ao carregar dados do diário.'); } finally { setLoadingDiario(false); }
     }
     loadDiario();
   }, [selectedTurmaNumero]);
@@ -92,9 +86,7 @@ function DiarioPresencaContent() {
 
   const handleUpdatePresence = async (matricula: string, nome: string, dataStr: string, novoStatus: TipoRegistroDiario) => {
     const chave = `${matricula}_${dataStr}`;
-    setSavingCell(chave);
     
-    // .upsert() resolve tanto insert quanto update automaticamente com base na PK composta
     const { data, error } = await supabase
       .from('diario_presenca')
       .upsert({
@@ -110,40 +102,42 @@ function DiarioPresencaContent() {
     if (!error && data) {
       setPresencas(prev => ({ ...prev, [chave]: data }));
     }
-    setTimeout(() => setSavingCell(null), 500);
   };
 
-  if (loadingTurmas) return <div>Carregando...</div>;
+  if (loadingTurmas) return <div className="p-8 text-center">Carregando turmas...</div>;
 
   return (
     <div className="space-y-6">
-      <div className="bg-white border p-6 rounded-xl flex justify-between">
-        <h1 className="text-xl font-bold">Diário de Presença</h1>
+      <div className="bg-white border p-6 rounded-xl shadow-sm flex items-center justify-between">
+        <div>
+           <h1 className="text-xl font-bold text-slate-900">Diário de Presença</h1>
+           <p className="text-sm text-slate-500">Gerenciamento de frequência por turma.</p>
+        </div>
         <select 
           value={selectedTurmaNumero} 
           onChange={(e) => {
             setSelectedTurmaNumero(e.target.value);
             router.replace(`/turmas?turma=${e.target.value}`);
           }}
-          className="border rounded p-2"
+          className="border border-slate-300 rounded-lg p-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none"
         >
           {turmas.map(t => <option key={t.numero_turma} value={t.numero_turma}>Turma {t.numero_turma}</option>)}
         </select>
       </div>
 
-      {loadingDiario ? <div>Carregando diário...</div> : (
-        <div className="overflow-x-auto bg-white rounded-xl shadow-sm border">
+      {loadingDiario ? <div className="p-10 text-center text-slate-400">Carregando registros...</div> : (
+        <div className="overflow-x-auto bg-white rounded-xl shadow-sm border border-slate-200">
           <table className="w-full text-left">
-            <thead className="bg-slate-50 border-b">
+            <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th className="p-3 w-64">Operador</th>
-                {datasLista.map(d => <th key={d} className="p-2 text-center text-xs">{d.split('-')[2]}</th>)}
+                <th className="p-4 w-64 text-xs font-bold uppercase text-slate-500">Operador</th>
+                {datasLista.map(d => <th key={d} className="p-2 text-center text-xs font-bold text-slate-500">{d.split('-')[2]}</th>)}
               </tr>
             </thead>
             <tbody>
               {colaboradores.map(c => (
-                <tr key={c.matricula} className="border-b">
-                  <td className="p-3 font-semibold">{c.nome}</td>
+                <tr key={c.matricula} className="border-b border-slate-100 hover:bg-slate-50">
+                  <td className="p-3 text-sm font-semibold text-slate-800">{c.nome}</td>
                   {datasLista.map(d => {
                     const chave = `${c.matricula}_${d}`;
                     const status = presencas[chave]?.tipo_registro || 'Presença';
@@ -152,7 +146,7 @@ function DiarioPresencaContent() {
                         <select 
                           value={status} 
                           onChange={(e) => handleUpdatePresence(c.matricula, c.nome, d, e.target.value as TipoRegistroDiario)}
-                          className={`w-full p-1 rounded text-[10px] ${STATUS_COLORS[status]?.bg} ${STATUS_COLORS[status]?.text}`}
+                          className={`w-full p-1.5 rounded text-[10px] font-bold ${STATUS_COLORS[status]?.bg} ${STATUS_COLORS[status]?.text}`}
                         >
                           {STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                         </select>
