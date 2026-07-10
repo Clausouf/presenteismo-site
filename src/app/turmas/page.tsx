@@ -16,12 +16,28 @@ const STATUS_OPTIONS = [
   { value: 'Atestado', label: 'Atestado' }
 ];
 
-// --- COMPONENTE DA TURMA (Tabela + Observações) ---
+// --- COMPONENTE DA TURMA (Tabela + Cálculos + Observações) ---
 function TabelaTurma({ turma, colaboradores, presencas, obsInicial, onUpdate }: any) {
   const [observacoes, setObservacoes] = useState(obsInicial || []);
   const [novaObs, setNovaObs] = useState('');
   
   const datas = gerarArrayDatas(turma.data_inicio, turma.data_fim);
+
+  // Lógica de cálculo dos indicadores
+  const calcularIndicadores = (dataStr: string) => {
+    const total = colaboradores.length;
+    if (total === 0) return { absPercent: "0", desligPercent: "0" };
+
+    const registrosDoDia = colaboradores.map((c: any) => presencas[`${c.matricula}_${dataStr}`]?.tipo_registro);
+    
+    const faltas = registrosDoDia.filter((s: string) => s === 'Falta Injustificada' || s === 'Falta Integração').length;
+    const desligamentos = registrosDoDia.filter((s: string) => s === 'Desistência' || s === 'Desligamento a Pedido').length;
+
+    return { 
+      absPercent: ((faltas / total) * 100).toFixed(0),
+      desligPercent: ((desligamentos / total) * 100).toFixed(0)
+    };
+  };
 
   const handleSalvarObs = async () => {
     if (!novaObs.trim()) return;
@@ -41,7 +57,6 @@ function TabelaTurma({ turma, colaboradores, presencas, obsInicial, onUpdate }: 
         Turma {turma.numero_turma} - {turma.status}
       </div>
       
-      {/* Tabela de Presença */}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs">
           <thead>
@@ -75,10 +90,27 @@ function TabelaTurma({ turma, colaboradores, presencas, obsInicial, onUpdate }: 
               </tr>
             ))}
           </tbody>
+          
+          {/* Rodapé com Cálculos */}
+          <tfoot className="bg-slate-50 border-t-2 border-slate-200">
+            <tr>
+              <td className="p-2 font-bold text-[11px]">ABS (%)</td>
+              {datas.map(d => {
+                const { absPercent } = calcularIndicadores(d);
+                return <td key={d} className="text-center text-[11px] font-bold text-rose-600">{absPercent}%</td>
+              })}
+            </tr>
+            <tr>
+              <td className="p-2 font-bold text-[11px] text-slate-500">Deslig./Desist. (%)</td>
+              {datas.map(d => {
+                const { desligPercent } = calcularIndicadores(d);
+                return <td key={d} className="text-center text-[11px] text-slate-600">{desligPercent}%</td>
+              })}
+            </tr>
+          </tfoot>
         </table>
       </div>
 
-      {/* Observações */}
       <div className="p-4 bg-slate-50 border-t">
         <label className="block text-sm font-bold text-slate-700 mb-2">Adicionar Observação</label>
         <textarea 
