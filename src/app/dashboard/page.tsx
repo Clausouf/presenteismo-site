@@ -28,7 +28,7 @@ export default function DashboardPage() {
         const filtroData = `${anoAtual}-${mesAtual}`;
 
         const [turmasRes, colabsRes, diarioRes] = await Promise.all([
-          supabase.from('turmas').select('*'),
+          supabase.from('turmas').select('*, operacoes(nome)'),
           supabase.from('colaboradores').select('*'),
           supabase.from('diario_presenca').select('*'), 
         ]);
@@ -56,20 +56,26 @@ export default function DashboardPage() {
           absMensal: totalRegistrosGeral > 0 ? (totalFaltasGeral / totalRegistrosGeral) * 100 : 0
         });
 
-        // Nova lógica: Mapear TURMAS (não operações) para ter listas curtas e dinâmicas
-        const getTurmaRankings = (turmasSubset: any[]) => {
-          const dados = turmasSubset.map(turma => {
-            const colabsTurma = colabs.filter(c => c.turma_numero === turma.numero_turma);
-            const diarioTurma = diario.filter(d => d.turma_numero === turma.numero_turma);
+        // Lógica agrupada por NOME DA OPERAÇÃO
+        const getOpRankings = (turmasSubset: any[]) => {
+          // Pega apenas os nomes das operações que possuem turmas neste subset
+          const opsUnicas = [...new Set(turmasSubset.map(t => t.operacoes?.nome).filter(Boolean))];
+
+          const dados = opsUnicas.map(opNome => {
+            const turmasDaOp = turmasSubset.filter(t => t.operacoes?.nome === opNome);
+            const numerosTurmas = turmasDaOp.map(t => t.numero_turma);
             
-            const totalReg = diarioTurma.filter(d => d.tipo_registro !== 'Folga').length;
-            const faltas = diarioTurma.filter(d => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(d.tipo_registro)).length;
-            const deslig = diarioTurma.filter(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro)).length;
+            const colabsOp = colabs.filter(c => numerosTurmas.includes(c.turma_numero));
+            const diarioOp = diario.filter(d => numerosTurmas.includes(d.turma_numero));
+            
+            const totalReg = diarioOp.filter(d => d.tipo_registro !== 'Folga').length;
+            const faltas = diarioOp.filter(d => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(d.tipo_registro)).length;
+            const deslig = diarioOp.filter(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro)).length;
 
             return {
-              nome: `Turma ${turma.numero_turma}`,
+              nome: opNome,
               abs: totalReg > 0 ? (faltas / totalReg) * 100 : 0,
-              to: colabsTurma.length > 0 ? (deslig / colabsTurma.length) * 100 : 0
+              to: colabsOp.length > 0 ? (deslig / colabsOp.length) * 100 : 0
             };
           });
 
@@ -80,8 +86,8 @@ export default function DashboardPage() {
         };
 
         setRankings({
-          andamento: getTurmaRankings(ativas),
-          finalizadas: getTurmaRankings(finalizadas)
+          andamento: getOpRankings(ativas),
+          finalizadas: getOpRankings(finalizadas)
         });
 
       } catch (err) {
@@ -99,7 +105,7 @@ export default function DashboardPage() {
     <div className="p-4 space-y-4 text-sm">
       <h1 className="text-xl font-bold">Dashboard Geral</h1>
       
-      {/* Cards com Cores Fixas */}
+      {/* Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div className="bg-white p-3 rounded shadow border-l-4 border-blue-500">
           <p className="text-[10px] font-bold text-gray-500 uppercase">Turmas Ativas</p>
@@ -125,7 +131,6 @@ export default function DashboardPage() {
 
       {/* Rankings */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Andamento (Apenas as ativas) */}
         <div className="bg-white p-4 rounded shadow border border-blue-100">
           <h2 className="font-bold mb-2 text-blue-600">Turmas em Andamento</h2>
           <div className="grid grid-cols-2 gap-2">
@@ -140,7 +145,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Finalizadas */}
         <div className="bg-white p-4 rounded shadow border border-green-100">
           <h2 className="font-bold mb-2 text-emerald-600">Turmas Finalizadas</h2>
           <div className="grid grid-cols-2 gap-2">
