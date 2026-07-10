@@ -7,7 +7,6 @@ import {
   TrendingUp, 
   TrendingDown, 
   Briefcase, 
-  CheckCircle,
   AlertCircle
 } from 'lucide-react';
 
@@ -31,31 +30,35 @@ export default function DashboardPage() {
         const hoje = new Date();
         const mesAtual = (hoje.getMonth() + 1).toString().padStart(2, '0');
         const anoAtual = hoje.getFullYear();
-        const filtroData = `${anoAtual}-${mesAtual}`;
+        const filtroData = `${anoAtual}-${mesAtual}`; // Ex: "2026-07"
 
+        // Buscamos todos os dados sem filtros de URL para evitar o erro 404
         const [turmasRes, colabsRes, diarioRes, opsRes] = await Promise.all([
           supabase.from('turmas').select('*, operacoes(*)'),
           supabase.from('colaboradores').select('*'),
-          supabase.from('diario_presenca').select('*').like('data', `${filtroData}%`),
+          supabase.from('diario_presenca').select('*'), 
           supabase.from('operacoes').select('*')
         ]);
 
-        if (!turmasRes.data || !colabsRes.data || !diarioRes.data || !opsRes.data) return;
+        if (!turmasRes.data || !colabsRes.data || !diarioRes.data || !opsRes.data) {
+          console.error("Erro ao carregar dados do Supabase");
+          return;
+        }
 
         const turmas = turmasRes.data;
         const colabs = colabsRes.data;
-        const diario = diarioRes.data;
+        // Filtro aplicado localmente após carregar todos os dados
+        const diario = diarioRes.data.filter(d => d.data && d.data.startsWith(filtroData));
         const operacoes = opsRes.data;
 
         // 1. Métricas de Turmas
         const ativas = turmas.filter(t => t.status === 'Em Andamento');
         const finalizadas = turmas.filter(t => t.status === 'Finalizada');
         
-        // 2. Operadores em treinamento (só de turmas ativas)
         const turmasAtivasIds = ativas.map(t => t.numero_turma);
         const emTreinamento = colabs.filter(c => turmasAtivasIds.includes(c.turma_numero));
 
-        // 3. Processamento por Operação
+        // 2. Processamento por Operação
         const mapaOps = operacoes.map(op => {
           const turmasOp = turmas.filter(t => t.operacoes?.id === op.id);
           const turmasOpIds = turmasOp.map(t => t.numero_turma);
@@ -73,7 +76,7 @@ export default function DashboardPage() {
           };
         });
 
-        // 4. Totais Globais Mensais
+        // 3. Totais Globais Mensais
         const totalRegistrosGeral = diario.filter(d => d.tipo_registro !== 'Folga').length;
         const totalFaltasGeral = diario.filter(d => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(d.tipo_registro)).length;
         const totalDesligGeral = diario.filter(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro)).length;
@@ -91,7 +94,7 @@ export default function DashboardPage() {
         setRankingTo([...mapaOps].sort((a, b) => b.to - a.to));
 
       } catch (err) {
-        console.error('Erro:', err);
+        console.error('Erro ao processar dashboard:', err);
       } finally {
         setLoading(false);
       }
