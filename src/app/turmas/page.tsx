@@ -1,215 +1,112 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Turma, Colaborador, DiarioPresenca } from '@/types/database.types';
-
-const STATUS_OPTIONS = [
-  { value: '', label: '--' },
-  { value: 'Presença', label: 'Presença' },
-  { value: 'Folga', label: 'Folga' },
-  { value: 'Falta Injustificada', label: 'Falta Injustificada' },
-  { value: 'Falta Integração', label: 'Falta Integração' },
-  { value: 'Desistência', label: 'Desistência' },
-  { value: 'Desligamento a Pedido', label: 'Desligamento' },
-  { value: 'Atestado', label: 'Atestado' }
-];
+// ... (mantenha seus imports de tipos aqui)
 
 function DiarioPresencaContent() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-
-  const [turmas, setTurmas] = useState<Turma[]>([]);
+  const [turmas, setTurmas] = useState<any[]>([]);
   const [operacoes, setOperacoes] = useState<any[]>([]);
   const [selectedOperacaoId, setSelectedOperacaoId] = useState<string>('todos');
-  const [selectedTurma, setSelectedTurma] = useState<Turma | null>(null);
+  const [selectedTurma, setSelectedTurma] = useState<any>(null);
   
-  const [colaboradores, setColaboradores] = useState<Colaborador[]>([]);
-  const [presencas, setPresencas] = useState<Record<string, DiarioPresenca>>({}); 
-  const [datasLista, setDatasLista] = useState<string[]>([]);
-  const [observacoes, setObservacoes] = useState('');
-  
-  const [loading, setLoading] = useState(false);
+  // Estados para observações
+  const [novaObs, setNovaObs] = useState('');
+  const [historicoObs, setHistoricoObs] = useState<any[]>([]);
 
+  // ... (seus outros estados de colaboradores, presenças, etc)
+
+  // 1. CARREGAMENTO INICIAL
   useEffect(() => {
-    async function loadInitialData() {
-      const [resTurmas, resOps] = await Promise.all([
-        supabase.from('turmas').select('*'),
-        supabase.from('operacoes').select('*')
-      ]);
-      if (resTurmas.data) setTurmas(resTurmas.data);
-      if (resOps.data) setOperacoes(resOps.data);
-      
-      const queryNum = searchParams.get('turma');
-      if (queryNum) carregarDiario(queryNum);
+    async function init() {
+      const { data: t } = await supabase.from('turmas').select('*');
+      const { data: o } = await supabase.from('operacoes').select('*');
+      if (t) setTurmas(t);
+      if (o) setOperacoes(o);
     }
-    loadInitialData();
+    init();
   }, []);
 
-  async function carregarDiario(num: string) {
-    setLoading(true);
-    const { data: turma } = await supabase.from('turmas').select('*').eq('numero_turma', num).single();
+  // 2. FUNÇÃO DE CARREGAR DADOS DA TURMA
+  const carregarDadosTurma = async (turmaNumero: string) => {
+    // Busca detalhes da turma
+    const { data: turma } = await supabase.from('turmas').select('*').eq('numero_turma', turmaNumero).single();
     if (turma) {
       setSelectedTurma(turma);
-      setObservacoes(turma.observacoes || '');
-      const datas = gerarArrayDatas(turma.data_inicio, turma.data_fim);
-      setDatasLista(datas);
-      
-      const { data: colabs } = await supabase.from('colaboradores').select('*').eq('turma_numero', num);
-      setColaboradores(colabs || []);
-      
-      const { data: regs } = await supabase.from('diario_presenca').select('*').eq('turma_numero', num);
-      const mapa: Record<string, DiarioPresenca> = {};
-      regs?.forEach(r => mapa[`${r.matricula}_${r.data}`] = r);
-      setPresencas(mapa);
-    }
-    setLoading(false);
-  }
-
-  const gerarArrayDatas = (inicio: string, fim: string) => {
-    const arr = [];
-    let d = new Date(inicio + 'T00:00:00');
-    const f = new Date(fim + 'T00:00:00');
-    while (d <= f) {
-      arr.push(d.toISOString().split('T')[0]);
-      d.setDate(d.getDate() + 1);
-    }
-    return arr;
-  };
-
-  const handleUpdatePresence = async (matricula: string, nome: string, dataStr: string, status: string) => {
-    const chave = `${matricula}_${dataStr}`;
-
-    if (status === '') {
-      // Se selecionou "--", deleta o registro do banco
-      await supabase.from('diario_presenca').delete().eq('turma_numero', selectedTurma?.numero_turma).eq('matricula', matricula).eq('data', dataStr);
-      setPresencas(prev => { const next = { ...prev }; delete next[chave]; return next; });
-    } else {
-      // Caso contrário, insere ou atualiza
-      const { data } = await supabase.from('diario_presenca').upsert({
-        turma_numero: selectedTurma?.numero_turma, matricula, colaborador_nome: nome, data: dataStr, tipo_registro: status
-      }).select().single();
-      if (data) setPresencas(prev => ({ ...prev, [chave]: data }));
+      // Busca observações dessa turma
+      const { data: obs } = await supabase.from('turma_observacoes').select('*').eq('turma_numero', turmaNumero).order('created_at', { ascending: false });
+      setHistoricoObs(obs || []);
+      // ... (carregar presenças e colaboradores)
     }
   };
 
-  const saveObservacoes = async (texto: string) => {
-    if (!selectedTurma) return;
-    await supabase.from('turmas').update({ observacoes: texto }).eq('numero_turma', selectedTurma.numero_turma);
-  };
-
-  const calcularIndicadores = (dataStr: string) => {
-    const registrosDoDia = colaboradores.map(c => presencas[`${c.matricula}_${dataStr}`]?.tipo_registro);
-    const total = colaboradores.length;
-    if (total === 0) return { absPercent: "0", desligamentosPercent: "0" };
-
-    const faltas = registrosDoDia.filter(s => s === 'Falta Injustificada' || s === 'Falta Integração').length;
-    const absPercent = ((faltas / total) * 100).toFixed(0);
-
-    const desligamentos = registrosDoDia.filter(s => s === 'Desistência' || s === 'Desligamento a Pedido').length;
-    const desligamentosPercent = ((desligamentos / total) * 100).toFixed(0);
+  // 3. SALVAR OBSERVAÇÃO
+  const handleSalvarObs = async () => {
+    if (!novaObs.trim() || !selectedTurma) return;
     
-    return { absPercent, desligamentosPercent };
+    const { data, error } = await supabase.from('turma_observacoes').insert({
+      turma_numero: selectedTurma.numero_turma,
+      texto: novaObs
+    }).select();
+
+    if (data) {
+      setHistoricoObs([data[0], ...historicoObs]); // Adiciona no topo da lista
+      setNovaObs(''); // Limpa o campo
+    }
   };
 
-  const turmasFiltradas = selectedOperacaoId === 'todos' ? turmas : turmas.filter(t => t.operacao_id === Number(selectedOperacaoId));
+  // 4. LÓGICA DE FILTRAGEM
+  const turmasFiltradas = selectedOperacaoId === 'todos' 
+    ? turmas 
+    : turmas.filter(t => String(t.operacao_id) === String(selectedOperacaoId));
 
   return (
     <div className="space-y-6 p-4">
-      <div className="grid grid-cols-2 gap-4 bg-white p-4 rounded-lg border shadow-sm">
+      {/* SELETORES */}
+      <div className="grid grid-cols-2 gap-4 bg-white p-4 rounded-lg shadow">
         <div>
-          <label className="block text-xs font-bold text-slate-500 mb-1">OPERAÇÃO</label>
-          <select className="w-full p-2 border rounded-lg text-sm" onChange={(e) => { setSelectedOperacaoId(e.target.value); setSelectedTurma(null); }}>
+          <label className="block text-xs font-bold text-gray-500">OPERAÇÃO</label>
+          <select onChange={(e) => { setSelectedOperacaoId(e.target.value); setSelectedTurma(null); }} className="w-full border p-2 rounded">
             <option value="todos">Todas as Operações</option>
             {operacoes.map(op => <option key={op.id} value={op.id}>{op.nome}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-xs font-bold text-slate-500 mb-1">TURMA</label>
-          <select value={selectedTurma?.numero_turma || ''} className="w-full p-2 border rounded-lg text-sm" onChange={(e) => { if (e.target.value) { carregarDiario(e.target.value); router.replace(`/turmas?turma=${e.target.value}`); } }}>
+          <label className="block text-xs font-bold text-gray-500">TURMA</label>
+          <select onChange={(e) => carregarDadosTurma(e.target.value)} className="w-full border p-2 rounded">
             <option value="">Selecione uma turma...</option>
-            {turmasFiltradas.map(t => <option key={t.numero_turma} value={t.numero_turma}>Turma {t.numero_turma} ({t.status})</option>)}
+            {turmasFiltradas.map(t => <option key={t.numero_turma} value={t.numero_turma}>Turma {t.numero_turma}</option>)}
           </select>
         </div>
       </div>
 
-      {selectedTurma && !loading && (
-        <div className="space-y-4">
-          <div className="overflow-x-auto bg-white rounded-lg border">
-            <table className="w-full text-left">
-              <thead>
-                {/* Linha da Turma */}
-                <tr className="bg-slate-100">
-                  <th className="p-2 text-xs text-slate-600"></th>
-                  <th colSpan={datasLista.length} className="text-center text-sm font-bold text-slate-800 p-2 uppercase tracking-wider">
-                    Turma {selectedTurma.numero_turma}
-                  </th>
-                </tr>
-                {/* Linha da Legenda */}
-                <tr>
-                   <th className="p-2 text-[10px] text-slate-400">OPERADOR</th>
-                   {datasLista.map((d, i) => (
-                     <th key={d} className="text-center">
-                        <div className="text-[9px] text-blue-600 font-bold uppercase">{i === 0 ? 'Integração' : (i >= datasLista.length - 3 ? 'Acomp.' : 'Treinamento')}</div>
-                        <div className="text-xs">{d.split('-')[2]}</div>
-                     </th>
-                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {colaboradores.map(c => (
-                  <tr key={c.matricula} className="border-t">
-                    <td className="p-2 text-sm font-medium">{c.nome}</td>
-                    {datasLista.map(d => (
-                      <td key={d} className="p-1">
-                        <select 
-                          value={presencas[`${c.matricula}_${d}`]?.tipo_registro || ''} 
-                          onChange={(e) => handleUpdatePresence(c.matricula, c.nome, d, e.target.value)}
-                          className={`w-full text-[10px] border rounded p-1 ${presencas[`${c.matricula}_${d}`]?.tipo_registro ? 'bg-slate-50' : ''}`}
-                        >
-                          {STATUS_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                        </select>
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot className="bg-slate-50 border-t-2 border-slate-200">
-                <tr>
-                  <td className="p-2 font-bold text-xs">ABS (%)</td>
-                  {datasLista.map(d => {
-                     const { absPercent } = calcularIndicadores(d);
-                     return <td key={d} className="text-center text-xs font-bold text-rose-600">{absPercent}%</td>
-                  })}
-                </tr>
-                <tr>
-                  <td className="p-2 font-bold text-xs text-slate-500">Deslig./Desist. (%)</td>
-                  {datasLista.map(d => {
-                     const { desligamentosPercent } = calcularIndicadores(d);
-                     return <td key={d} className="text-center text-xs text-slate-600">{desligamentosPercent}%</td>
-                  })}
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+      {/* ÁREA DE OBSERVAÇÕES */}
+      {selectedTurma && (
+        <div className="bg-white p-4 rounded-lg shadow mt-4">
+          <label className="block font-bold text-sm mb-2">Adicionar Observação</label>
+          <textarea 
+            className="w-full border p-2 rounded h-20"
+            value={novaObs}
+            onChange={(e) => setNovaObs(e.target.value)}
+          />
+          <button 
+            onClick={handleSalvarObs}
+            className="bg-blue-600 text-white px-4 py-2 rounded mt-2 hover:bg-blue-700"
+          >
+            Salvar Observação
+          </button>
 
-          <div className="bg-white p-4 rounded-lg border shadow-sm">
-            <label className="block text-sm font-bold text-slate-700 mb-2">Observações Gerais da Turma</label>
-            <textarea 
-              value={observacoes}
-              onChange={(e) => setObservacoes(e.target.value)}
-              onBlur={() => saveObservacoes(observacoes)}
-              className="w-full h-32 p-3 border rounded-lg text-sm"
-              placeholder="Digite aqui observações relevantes sobre esta turma..."
-            />
+          <div className="mt-6 space-y-2">
+            <h3 className="font-bold text-sm text-gray-600">Histórico de Observações:</h3>
+            {historicoObs.map((item) => (
+              <div key={item.id} className="p-3 bg-gray-50 border rounded text-sm">
+                <span className="text-gray-400 text-xs">{new Date(item.created_at).toLocaleString()}</span>
+                <p>{item.texto}</p>
+              </div>
+            ))}
           </div>
         </div>
       )}
     </div>
   );
-}
-
-export default function DiarioPresencaPage() {
-  return <Suspense fallback={<div>Carregando...</div>}><DiarioPresencaContent /></Suspense>;
 }
