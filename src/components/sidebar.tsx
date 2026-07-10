@@ -22,6 +22,7 @@ export function Sidebar() {
   const { logout, user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
 
+  // Lista base de menus
   const baseMenuItems = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
     { name: 'Criar Turmas', href: '/cadastro', icon: PlusCircle },
@@ -31,8 +32,13 @@ export function Sidebar() {
     { name: 'Configurações', href: '/configuracoes', icon: Sliders },
   ];
 
-  // Filtra itens: Adiciona "Novo Administrador" apenas se for Gerente
-  const menuItems = user?.perfil === 'Gerente' 
+  // Lógica de Verificação (Mais robusta)
+  // Removemos espaços e comparamos em minúsculo para garantir precisão
+  const perfilUsuario = user?.perfil?.toLowerCase().trim();
+  const isGerente = perfilUsuario === 'gerente';
+
+  // Monta o menu condicionalmente
+  const menuItems = isGerente 
     ? [...baseMenuItems, { name: 'Novo Administrador', href: '/criar-adm', icon: UserPlus }]
     : baseMenuItems;
 
@@ -98,6 +104,7 @@ export function Sidebar() {
         </div>
       </aside>
 
+      {/* Máscara Mobile */}
       {isOpen && (
         <div onClick={() => setIsOpen(false)} className="fixed inset-0 bg-black/50 z-30 md:hidden" />
       )}
