@@ -5,11 +5,11 @@ export const runtime = 'edge';
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { Lock, Mail, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Lock, User, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
+  const [matricula, setMatricula] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -20,21 +20,24 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
 
-    if (!email || !password) {
+    if (!matricula || !password) {
       setError('Por favor, preencha todos os campos obrigatórios.');
       setLoading(false);
       return;
     }
 
     try {
+      // Constrói o e-mail de autenticação baseado na matrícula
+      const emailAutenticacao = `${matricula.trim()}@presenteismo.local`;
+
       const { error: authError } = await supabase.auth.signInWithPassword({
-        email,
+        email: emailAutenticacao,
         password,
       });
 
       if (authError) {
         if (authError.message === 'Invalid login credentials') {
-          setError('E-mail ou senha incorretos. Tente novamente.');
+          setError('Matrícula ou senha incorretos. Tente novamente.');
         } else {
           setError(authError.message);
         }
@@ -79,17 +82,17 @@ export default function LoginPage() {
         <form onSubmit={handleLogin} className="space-y-5">
           <div>
             <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-              E-mail Corporativo
+              Matrícula
             </label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                <Mail size={18} />
+                <User size={18} />
               </div>
               <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="nome.sobrenome@empresa.com"
+                type="text"
+                value={matricula}
+                onChange={(e) => setMatricula(e.target.value)}
+                placeholder="Digite sua matrícula"
                 className="w-full bg-slate-950/50 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
                 disabled={loading}
                 required
