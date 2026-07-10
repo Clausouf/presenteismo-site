@@ -1,17 +1,19 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { UserPlus, User, Lock, ShieldCheck, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { useAuth } from '@/hooks/use-auth'; // Importação necessária
+import { UserPlus, User, CheckCircle2 } from 'lucide-react';
 import { PerfilUsuario } from '@/types/database.types';
 
 export default function CriarAdmPage() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth(); // Hook para verificar permissão
   
   // Estados de formulário
   const [nome, setNome] = useState('');
-  const [matricula, setMatricula] = useState(''); // Mudamos de email para matricula
+  const [matricula, setMatricula] = useState('');
   const [perfil, setPerfil] = useState<PerfilUsuario>('Recrutamento');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -21,12 +23,18 @@ export default function CriarAdmPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<boolean>(false);
 
+  // Efeito de segurança: Redireciona se não for Gerente
+  useEffect(() => {
+    if (!authLoading && (!user || user.perfil !== 'Gerente')) {
+      router.push('/dashboard');
+    }
+  }, [user, authLoading, router]);
+
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
-    // Validações Básicas
     if (!nome || !matricula || !password || !confirmPassword) {
       setError('Preencha todos os campos da ficha cadastral.');
       setLoading(false);
@@ -39,12 +47,11 @@ export default function CriarAdmPage() {
       return;
     }
 
-    // Gerar o e-mail fictício internamente
     const emailGerado = `${matricula.trim()}@presenteismo.local`;
 
     try {
       const { error: signUpError } = await supabase.auth.signUp({
-        email: emailGerado, // Usa o e-mail gerado automaticamente
+        email: emailGerado,
         password,
         options: {
           data: {
@@ -64,7 +71,7 @@ export default function CriarAdmPage() {
       setLoading(false);
 
       setTimeout(() => {
-        router.push('/login');
+        router.push('/dashboard');
       }, 3000);
 
     } catch (err) {
@@ -72,6 +79,9 @@ export default function CriarAdmPage() {
       setLoading(false);
     }
   };
+
+  // Enquanto verifica o acesso, exibe um carregamento neutro
+  if (authLoading) return <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white">Verificando permissões...</div>;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4 sm:p-6 lg:p-8">
@@ -93,44 +103,22 @@ export default function CriarAdmPage() {
               </div>
             )}
 
-            {/* Campo Nome */}
             <div>
               <label className="block text-xs font-semibold text-slate-300 uppercase mb-2">Nome Completo</label>
-              <input
-                type="text"
-                value={nome}
-                onChange={(e) => setNome(e.target.value)}
-                className="w-full bg-slate-950/50 border border-slate-800 rounded-xl px-4 py-2.5 text-white"
-                required
-              />
+              <input type="text" value={nome} onChange={(e) => setNome(e.target.value)} className="w-full bg-slate-950/50 border border-slate-800 rounded-xl px-4 py-2.5 text-white" required />
             </div>
 
-            {/* Campo Matrícula (substitui o e-mail) */}
             <div>
               <label className="block text-xs font-semibold text-slate-300 uppercase mb-2">Matrícula</label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-500">
-                  <User size={18} />
-                </div>
-                <input
-                  type="text"
-                  value={matricula}
-                  onChange={(e) => setMatricula(e.target.value)}
-                  placeholder="Ex: 58501"
-                  className="w-full bg-slate-950/50 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-white"
-                  required
-                />
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-500"><User size={18} /></div>
+                <input type="text" value={matricula} onChange={(e) => setMatricula(e.target.value)} placeholder="Ex: 58501" className="w-full bg-slate-950/50 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-white" required />
               </div>
             </div>
 
-            {/* Restante dos campos (Perfil, Senhas...) mantêm-se iguais */}
             <div>
               <label className="block text-xs font-semibold text-slate-300 uppercase mb-2">Nível de Perfil</label>
-              <select
-                value={perfil}
-                onChange={(e) => setPerfil(e.target.value as PerfilUsuario)}
-                className="w-full bg-slate-950/50 border border-slate-800 rounded-xl px-4 py-2.5 text-white"
-              >
+              <select value={perfil} onChange={(e) => setPerfil(e.target.value as PerfilUsuario)} className="w-full bg-slate-950/50 border border-slate-800 rounded-xl px-4 py-2.5 text-white">
                 <option value="Recrutamento" className="bg-slate-900">Recrutamento e Seleção</option>
                 <option value="Treinamento" className="bg-slate-900">Treinamento e Desenvolvimento</option>
                 <option value="Gerente" className="bg-slate-900">Gerência Geral</option>
