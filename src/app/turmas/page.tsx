@@ -17,13 +17,13 @@ const STATUS_OPTIONS = [
 ];
 
 // --- COMPONENTE DA TURMA (Tabela + Cálculos + Observações) ---
-function TabelaTurma({ turma, colaboradores, presencas, obsInicial, onUpdate }: any) {
+function TabelaTurma({ turma, colaboradores, presencas, obsInicial, onUpdate, onStatusChange }: any) {
   const [observacoes, setObservacoes] = useState(obsInicial || []);
   const [novaObs, setNovaObs] = useState('');
   
   const datas = gerarArrayDatas(turma.data_inicio, turma.data_fim);
 
-  // Lógica de cálculo dos indicadores
+  // Lógica de cálculo diário dos indicadores (ABS e TO)
   const calcularIndicadores = (dataStr: string) => {
     const total = colaboradores.length;
     if (total === 0) return { absPercent: "0", desligPercent: "0" };
@@ -53,8 +53,23 @@ function TabelaTurma({ turma, colaboradores, presencas, obsInicial, onUpdate }: 
 
   return (
     <div className="mb-10 border rounded-lg bg-white shadow-sm overflow-hidden">
-      <div className="p-4 bg-slate-50 border-b font-bold text-slate-800 text-lg">
-        Turma {turma.numero_turma} - {turma.status}
+      {/* Cabeçalho com o Seletor de Alteração de Status */}
+      <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
+        <div className="font-bold text-slate-800 text-lg">
+          Turma {turma.numero_turma}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-slate-500 uppercase">Status:</span>
+          <select
+            value={turma.status}
+            onChange={(e) => onStatusChange(turma.numero_turma, e.target.value)}
+            className="text-xs font-bold p-1 px-2 border rounded bg-white text-slate-700 cursor-pointer shadow-sm hover:bg-slate-100 transition-colors"
+          >
+            <option value="Em Andamento">Em Andamento</option>
+            <option value="Finalizada">Finalizada</option>
+            <option value="Pendente">Pendente</option>
+          </select>
+        </div>
       </div>
       
       <div className="overflow-x-auto">
@@ -74,8 +89,26 @@ function TabelaTurma({ turma, colaboradores, presencas, obsInicial, onUpdate }: 
           </thead>
           <tbody>
             {colaboradores.map((c: any) => (
-              <tr key={c.matricula} className="border-t">
-                <td className="p-3 font-medium text-slate-700">{c.nome}</td>
+              <tr key={c.matricula} className="border-t hover:bg-slate-50/50">
+                {/* Nome do Operador com Tooltip Informativo das colunas complementares */}
+                <td className="p-3 font-medium text-slate-700 relative group min-w-[180px]">
+                  <span className="cursor-help border-b border-dotted border-slate-400 pb-0.5 hover:text-blue-600 transition-colors">
+                    {c.nome}
+                  </span>
+                  
+                  {/* Caixa flutuante (Tooltip) - Aparece ao passar o mouse */}
+                  <div className="absolute left-3 bottom-full mb-2 w-64 bg-slate-800 text-white p-3 rounded-lg shadow-xl hidden group-hover:block z-50 text-[11px] pointer-events-none border border-slate-700">
+                    <div className="space-y-1.5">
+                      <p className="font-bold border-b border-slate-700 pb-1 mb-1 text-blue-400">{c.nome}</p>
+                      <p><span className="text-slate-400">Matrícula:</span> {c.matricula}</p>
+                      <p><span className="text-slate-400">Grupo de Jornada:</span> {c.grupo_jornada || 'Não Informado'}</p>
+                      <p><span className="text-slate-400">Grupo 30 Hrs:</span> {c.grupo_30hrs || 'Não Informado'}</p>
+                    </div>
+                    {/* Pequena seta do balão */}
+                    <div className="absolute top-full left-4 w-2 h-2 bg-slate-800 transform rotate-45 -translate-y-1"></div>
+                  </div>
+                </td>
+
                 {datas.map(d => (
                   <td key={d} className="p-1">
                     <select 
@@ -91,26 +124,27 @@ function TabelaTurma({ turma, colaboradores, presencas, obsInicial, onUpdate }: 
             ))}
           </tbody>
           
-          {/* Rodapé com Cálculos */}
+          {/* Rodapé mantido com os Cálculos Diários de ABS e Turnover */}
           <tfoot className="bg-slate-50 border-t-2 border-slate-200">
             <tr>
-              <td className="p-2 font-bold text-[11px]">ABS (%)</td>
+              <td className="p-3 font-bold text-slate-700">ABS (%)</td>
               {datas.map(d => {
                 const { absPercent } = calcularIndicadores(d);
-                return <td key={d} className="text-center text-[11px] font-bold text-rose-600">{absPercent}%</td>
+                return <td key={d} className="text-center font-bold text-rose-600 text-xs">{absPercent}%</td>
               })}
             </tr>
             <tr>
-              <td className="p-2 font-bold text-[11px] text-slate-500">Deslig./Desist. (%)</td>
+              <td className="p-3 font-bold text-slate-500">Deslig./Desist. (%)</td>
               {datas.map(d => {
                 const { desligPercent } = calcularIndicadores(d);
-                return <td key={d} className="text-center text-[11px] text-slate-600">{desligPercent}%</td>
+                return <td key={d} className="text-center font-bold text-slate-600 text-xs">{desligPercent}%</td>
               })}
             </tr>
           </tfoot>
         </table>
       </div>
 
+      {/* Seção de Observações Completamente Preservada */}
       <div className="p-4 bg-slate-50 border-t">
         <label className="block text-sm font-bold text-slate-700 mb-2">Adicionar Observação</label>
         <textarea 
@@ -119,7 +153,7 @@ function TabelaTurma({ turma, colaboradores, presencas, obsInicial, onUpdate }: 
           className="w-full h-20 p-2 border rounded-lg text-sm"
           placeholder="Digite aqui..."
         />
-        <button onClick={handleSalvarObs} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold mt-2 hover:bg-blue-700">
+        <button onClick={handleSalvarObs} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold mt-2 hover:bg-blue-700 transition-colors">
           Salvar Observação
         </button>
 
@@ -197,6 +231,19 @@ export default function DiarioPresencaPage() {
     });
   };
 
+  // Função para atualizar o status da turma diretamente no Banco de Dados
+  const handleStatusChange = async (turmaNum: string, novoStatus: string) => {
+    const { error } = await supabase
+      .from('turmas')
+      .update({ status: novoStatus })
+      .eq('numero_turma', turmaNum);
+
+    if (!error) {
+      // Atualiza o estado local das turmas para mudar na tela imediatamente
+      setTurmas(prev => prev.map(t => t.numero_turma === turmaNum ? { ...t, status: novoStatus } : t));
+    }
+  };
+
   const turmasFiltradas = selectedOperacaoId === 'todos' ? [] : turmas.filter(t => t.operacao_id === Number(selectedOperacaoId));
 
   return (
@@ -230,6 +277,7 @@ export default function DiarioPresencaPage() {
             presencas={dadosDasTurmas[numTurma].presencas}
             obsInicial={dadosDasTurmas[numTurma].obs}
             onUpdate={handleUpdatePresence}
+            onStatusChange={handleStatusChange}
           />
         );
       })}
