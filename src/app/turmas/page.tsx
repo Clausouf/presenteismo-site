@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Turma, Colaborador, DiarioPresenca } from '@/types/database.types';
 
-// Fix para erro de build do Vercel
+// Garante que a página seja renderizada dinamicamente para evitar erro de build
 export const dynamic = 'force-dynamic';
 
 const STATUS_OPTIONS = [
@@ -32,7 +32,6 @@ function DiarioPresencaContent() {
   const [presencas, setPresencas] = useState<Record<string, DiarioPresenca>>({}); 
   const [datasLista, setDatasLista] = useState<string[]>([]);
   
-  // Estados para observações
   const [novaObs, setNovaObs] = useState('');
   const [historicoObs, setHistoricoObs] = useState<any[]>([]);
   
@@ -69,7 +68,6 @@ function DiarioPresencaContent() {
       regs?.forEach(r => mapa[`${r.matricula}_${r.data}`] = r);
       setPresencas(mapa);
 
-      // Carrega histórico de observações
       const { data: obs } = await supabase.from('turma_observacoes').select('*').eq('turma_numero', num).order('created_at', { ascending: false });
       setHistoricoObs(obs || []);
     }
@@ -164,4 +162,63 @@ function DiarioPresencaContent() {
               </thead>
               <tbody>
                 {colaboradores.map(c => (
-                  <tr key={c.matricula} className="border-
+                  <tr key={c.matricula} className="border-t">
+                    <td className="p-2 text-sm font-medium">{c.nome}</td>
+                    {datasLista.map(d => (
+                      <td key={d} className="p-1">
+                        <select 
+                          value={presencas[`${c.matricula}_${d}`]?.tipo_registro || ''} 
+                          onChange={(e) => handleUpdatePresence(c.matricula, c.nome, d, e.target.value)}
+                          className="w-full text-[10px] border rounded p-1"
+                        >
+                          {STATUS_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                        </select>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="bg-slate-50 border-t-2 border-slate-200">
+                <tr>
+                  <td className="p-2 font-bold text-xs">ABS (%)</td>
+                  {datasLista.map(d => { const { absPercent } = calcularIndicadores(d); return <td key={d} className="text-center text-xs font-bold text-rose-600">{absPercent}%</td> })}
+                </tr>
+                <tr>
+                  <td className="p-2 font-bold text-xs text-slate-500">Deslig./Desist. (%)</td>
+                  {datasLista.map(d => { const { desligamentosPercent } = calcularIndicadores(d); return <td key={d} className="text-center text-xs text-slate-600">{desligamentosPercent}%</td> })}
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <div className="bg-white p-4 rounded-lg border shadow-sm">
+            <label className="block text-sm font-bold text-slate-700 mb-2">Adicionar Observação</label>
+            <textarea 
+              value={novaObs}
+              onChange={(e) => setNovaObs(e.target.value)}
+              className="w-full h-24 p-3 border rounded-lg text-sm mb-2"
+              placeholder="Digite aqui observações..."
+            />
+            <button onClick={handleSalvarObs} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700">
+              Salvar Observação
+            </button>
+
+            <div className="mt-6 space-y-2">
+              <h3 className="font-bold text-sm text-slate-600">Histórico de Observações:</h3>
+              {historicoObs.map((obs) => (
+                <div key={obs.id} className="p-3 bg-slate-50 border rounded text-sm text-slate-700">
+                  <span className="text-[10px] text-slate-400 block">{new Date(obs.created_at).toLocaleString()}</span>
+                  {obs.texto}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function DiarioPresencaPage() {
+  return <Suspense fallback={<div>Carregando...</div>}><DiarioPresencaContent /></Suspense>;
+}
