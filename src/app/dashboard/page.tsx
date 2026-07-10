@@ -2,10 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Download } from 'lucide-react'; // Ícone para o botão
+import { Download } from 'lucide-react';
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
+  const [diarioData, setDiarioData] = useState<any[]>([]); // Novo estado para o CSV
   const [metricas, setMetricas] = useState({
     turmasAtivas: 0,
     turmasFinalizadas: 0,
@@ -19,9 +20,9 @@ export default function DashboardPage() {
     finalizadas: { abs: [] as any[], to: [] as any[] }
   });
 
-  // Função para baixar o CSV
   const handleExport = () => {
-    let csvContent = "data:text/csv;charset=utf-8,";
+    // UTF-8 BOM para garantir acentos no Excel
+    let csvContent = "\ufeff"; 
     csvContent += "Relatório Dashboard Geral\n\n";
     
     // Métricas
@@ -48,10 +49,18 @@ export default function DashboardPage() {
         csvContent += `${o.nome},${o.abs.toFixed(0)}%,${toVal.toFixed(0)}%\n`;
     });
 
-    const encodedUri = encodeURI(csvContent);
+    // Detalhes do Diário (Nova Seção)
+    csvContent += "\nDetalhes Diário de Presença\n";
+    csvContent += "Data,Turma,Tipo de Registro\n";
+    diarioData.forEach(d => {
+        csvContent += `${d.data || ''},${d.turma_numero || ''},${d.tipo_registro || ''}\n`;
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `relatorio_dashboard_${new Date().toLocaleDateString()}.csv`);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `relatorio_completo_${new Date().toLocaleDateString()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -77,6 +86,8 @@ export default function DashboardPage() {
         const turmas = turmasRes.data;
         const colabs = colabsRes.data;
         const diario = diarioRes.data.filter(d => d.data && d.data.startsWith(filtroData));
+        
+        setDiarioData(diario); // Salvando para o export
 
         const ativas = turmas.filter(t => t.status === 'Em Andamento');
         const finalizadas = turmas.filter(t => t.status === 'Finalizada');
@@ -145,7 +156,6 @@ export default function DashboardPage() {
         </button>
       </div>
       
-      {/* Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div className="bg-white p-3 rounded shadow border-l-4 border-blue-500">
           <p className="text-[10px] font-bold text-gray-500 uppercase">Turmas Ativas</p>
@@ -169,7 +179,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Rankings */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white p-4 rounded shadow border border-blue-100">
           <h2 className="font-bold mb-2 text-blue-600">Turmas em Andamento</h2>
