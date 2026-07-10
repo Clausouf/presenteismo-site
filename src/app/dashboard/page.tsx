@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { Download } from 'lucide-react'; // Ícone para o botão
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
@@ -17,6 +18,44 @@ export default function DashboardPage() {
     andamento: { abs: [] as any[], to: [] as any[] },
     finalizadas: { abs: [] as any[], to: [] as any[] }
   });
+
+  // Função para baixar o CSV
+  const handleExport = () => {
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Relatório Dashboard Geral\n\n";
+    
+    // Métricas
+    csvContent += "Métrica,Valor\n";
+    csvContent += `Turmas Ativas,${metricas.turmasAtivas}\n`;
+    csvContent += `Turmas Finalizadas,${metricas.turmasFinalizadas}\n`;
+    csvContent += `Operadores em Treinamento,${metricas.opsEmTreinamento}\n`;
+    csvContent += `Turnover Mensal,${metricas.toMensal.toFixed(1)}%\n`;
+    csvContent += `ABS Mensal,${metricas.absMensal.toFixed(1)}%\n\n`;
+
+    // Rankings Andamento
+    csvContent += "Ranking Turmas em Andamento\n";
+    csvContent += "Operação,ABS%,TO%\n";
+    rankings.andamento.abs.forEach(o => {
+        const toVal = rankings.andamento.to.find(t => t.nome === o.nome)?.to || 0;
+        csvContent += `${o.nome},${o.abs.toFixed(0)}%,${toVal.toFixed(0)}%\n`;
+    });
+
+    // Rankings Finalizadas
+    csvContent += "\nRanking Turmas Finalizadas\n";
+    csvContent += "Operação,ABS%,TO%\n";
+    rankings.finalizadas.abs.forEach(o => {
+        const toVal = rankings.finalizadas.to.find(t => t.nome === o.nome)?.to || 0;
+        csvContent += `${o.nome},${o.abs.toFixed(0)}%,${toVal.toFixed(0)}%\n`;
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `relatorio_dashboard_${new Date().toLocaleDateString()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   useEffect(() => {
     async function carregarDashboard() {
@@ -39,7 +78,6 @@ export default function DashboardPage() {
         const colabs = colabsRes.data;
         const diario = diarioRes.data.filter(d => d.data && d.data.startsWith(filtroData));
 
-        // Cálculos Globais
         const ativas = turmas.filter(t => t.status === 'Em Andamento');
         const finalizadas = turmas.filter(t => t.status === 'Finalizada');
         const emTreinamento = colabs.filter(c => ativas.map(t => t.numero_turma).includes(c.turma_numero));
@@ -56,18 +94,13 @@ export default function DashboardPage() {
           absMensal: totalRegistrosGeral > 0 ? (totalFaltasGeral / totalRegistrosGeral) * 100 : 0
         });
 
-        // Lógica agrupada por NOME DA OPERAÇÃO
         const getOpRankings = (turmasSubset: any[]) => {
-          // Pega apenas os nomes das operações que possuem turmas neste subset
           const opsUnicas = [...new Set(turmasSubset.map(t => t.operacoes?.nome).filter(Boolean))];
-
           const dados = opsUnicas.map(opNome => {
             const turmasDaOp = turmasSubset.filter(t => t.operacoes?.nome === opNome);
             const numerosTurmas = turmasDaOp.map(t => t.numero_turma);
-            
             const colabsOp = colabs.filter(c => numerosTurmas.includes(c.turma_numero));
             const diarioOp = diario.filter(d => numerosTurmas.includes(d.turma_numero));
-            
             const totalReg = diarioOp.filter(d => d.tipo_registro !== 'Folga').length;
             const faltas = diarioOp.filter(d => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(d.tipo_registro)).length;
             const deslig = diarioOp.filter(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro)).length;
@@ -78,7 +111,6 @@ export default function DashboardPage() {
               to: colabsOp.length > 0 ? (deslig / colabsOp.length) * 100 : 0
             };
           });
-
           return {
             abs: [...dados].sort((a, b) => b.abs - a.abs),
             to: [...dados].sort((a, b) => b.to - a.to)
@@ -103,7 +135,15 @@ export default function DashboardPage() {
 
   return (
     <div className="p-4 space-y-4 text-sm">
-      <h1 className="text-xl font-bold">Dashboard Geral</h1>
+      <div className="flex justify-between items-center">
+        <h1 className="text-xl font-bold">Dashboard Geral</h1>
+        <button 
+            onClick={handleExport}
+            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700 transition"
+        >
+            <Download size={16} /> Exportar Relatório
+        </button>
+      </div>
       
       {/* Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
