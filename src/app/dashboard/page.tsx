@@ -3,168 +3,152 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { 
-  BarChart3, 
   Users, 
   TrendingUp, 
   TrendingDown, 
-  CalendarDays, 
   Briefcase, 
-  Award, 
-  AlertCircle,
-  Clock,
-  UserX
+  CheckCircle,
+  AlertCircle
 } from 'lucide-react';
-import { TipoRegistroDiario } from '@/types/database.types';
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
-  const [timeframe, setTimeframe] = useState<'dia' | 'semana' | 'mes'>('dia');
-  
   const [metricas, setMetricas] = useState({
-    totalTurmasAtivas: 0,
-    totalOperadoresMatriculados: 0,
-    taxaAbsenteismoGlobal: 0,
-    taxaTurnoverGlobal: 0
+    turmasAtivas: 0,
+    turmasFinalizadas: 0,
+    opsEmTreinamento: 0,
+    toMensal: 0,
+    absMensal: 0
   });
 
-  const [graficoFaltas, setGraficoFaltas] = useState<any[]>([]);
-  const [rankingOperacoes, setRankingOperacoes] = useState<any[]>([]);
-
-  // Função helper necessária para o build funcionar
-  const processarTimelineFaltas = (diario: any[], registrosAusencia: string[], tf: string) => {
-    // Implementação básica para evitar erro
-    const dados = diario
-      .filter(d => registrosAusencia.includes(d.tipo_registro))
-      .slice(0, 5); // Exemplo de processamento simples
-    setGraficoFaltas(dados);
-  };
+  const [rankingAbs, setRankingAbs] = useState<any[]>([]);
+  const [rankingTo, setRankingTo] = useState<any[]>([]);
 
   useEffect(() => {
-    async function carregarMétricasDashboard() {
+    async function carregarDashboard() {
       setLoading(true);
       try {
-        const { data: turmas } = await supabase
-          .from('turmas')
-          .select('*, operacoes(*)');
+        const hoje = new Date();
+        const mesAtual = (hoje.getMonth() + 1).toString().padStart(2, '0');
+        const anoAtual = hoje.getFullYear();
+        const filtroData = `${anoAtual}-${mesAtual}`;
+
+        const [turmasRes, colabsRes, diarioRes, opsRes] = await Promise.all([
+          supabase.from('turmas').select('*, operacoes(*)'),
+          supabase.from('colaboradores').select('*'),
+          supabase.from('diario_presenca').select('*').like('data', `${filtroData}%`),
+          supabase.from('operacoes').select('*')
+        ]);
+
+        if (!turmasRes.data || !colabsRes.data || !diarioRes.data || !opsRes.data) return;
+
+        const turmas = turmasRes.data;
+        const colabs = colabsRes.data;
+        const diario = diarioRes.data;
+        const operacoes = opsRes.data;
+
+        // 1. Métricas de Turmas
+        const ativas = turmas.filter(t => t.status === 'Em Andamento');
+        const finalizadas = turmas.filter(t => t.status === 'Finalizada');
         
-        const { data: colaboradores } = await supabase
-          .from('colaboradores')
-          .select('*');
+        // 2. Operadores em treinamento (só de turmas ativas)
+        const turmasAtivasIds = ativas.map(t => t.numero_turma);
+        const emTreinamento = colabs.filter(c => turmasAtivasIds.includes(c.turma_numero));
 
-        const { data: diario } = await supabase
-          .from('diario_presenca')
-          .select('*');
+        // 3. Processamento por Operação
+        const mapaOps = operacoes.map(op => {
+          const turmasOp = turmas.filter(t => t.operacoes?.id === op.id);
+          const turmasOpIds = turmasOp.map(t => t.numero_turma);
+          const colabsOp = colabs.filter(c => turmasOpIds.includes(c.turma_numero));
+          const diarioOp = diario.filter(d => turmasOpIds.includes(d.turma_numero));
+          
+          const totalRegistros = diarioOp.filter(d => d.tipo_registro !== 'Folga').length;
+          const totalFaltas = diarioOp.filter(d => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(d.tipo_registro)).length;
+          const totalDesligamentos = diarioOp.filter(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro)).length;
 
-        if (!turmas || !colaboradores || !diario) return;
+          return {
+            nome: op.nome,
+            abs: totalRegistros > 0 ? (totalFaltas / totalRegistros) * 100 : 0,
+            to: colabsOp.length > 0 ? (totalDesligamentos / colabsOp.length) * 100 : 0
+          };
+        });
 
-        const turmasAtivas = turmas.filter(t => t.status === 'Em Andamento');
-        const totalMatriculados = colaboradores.length;
-
-        const registrosAusencia: TipoRegistroDiario[] = ['Falta Injustificada', 'Atestado', 'Falta Integração', 'Desistência'];
-        const registrosEvasao: TipoRegistroDiario[] = ['Desligamento a Pedido', 'Desistência'];
-
-        const totalAusencias = diario.filter(d => registrosAusencia.includes(d.tipo_registro)).length;
-        const totalRegistrosValidos = diario.filter(d => d.tipo_registro !== 'Folga').length;
-        const totalEvasoes = diario.filter(d => registrosEvasao.includes(d.tipo_registro)).length;
+        // 4. Totais Globais Mensais
+        const totalRegistrosGeral = diario.filter(d => d.tipo_registro !== 'Folga').length;
+        const totalFaltasGeral = diario.filter(d => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(d.tipo_registro)).length;
+        const totalDesligGeral = diario.filter(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro)).length;
+        const totalColabsGeral = colabs.length;
 
         setMetricas({
-          totalTurmasAtivas: turmasAtivas.length,
-          totalOperadoresMatriculados: totalMatriculados,
-          taxaAbsenteismoGlobal: totalRegistrosValidos > 0 ? (totalAusencias / totalRegistrosValidos) * 100 : 0,
-          taxaTurnoverGlobal: totalMatriculados > 0 ? (totalEvasoes / totalMatriculados) * 100 : 0
+          turmasAtivas: ativas.length,
+          turmasFinalizadas: finalizadas.length,
+          opsEmTreinamento: emTreinamento.length,
+          absMensal: totalRegistrosGeral > 0 ? (totalFaltasGeral / totalRegistrosGeral) * 100 : 0,
+          toMensal: totalColabsGeral > 0 ? (totalDesligGeral / totalColabsGeral) * 100 : 0
         });
 
-        const mapaOps: Record<number, any> = {};
-
-        turmas.forEach(t => {
-          const op = t.operacoes;
-          if (op && !mapaOps[op.id]) {
-            mapaOps[op.id] = {
-              nome: op.nome,
-              codigo: op.codigo_operacao,
-              turmasAtivas: t.status === 'Em Andamento' ? 1 : 0,
-              totalFaltas: 0,
-              registrosValores: 0
-            };
-          } else if (op && t.status === 'Em Andamento') {
-            mapaOps[op.id].turmasAtivas += 1;
-          }
-        });
-
-        diario.forEach(d => {
-          const colab = colaboradores.find(c => c.matricula === d.matricula);
-          if (!colab) return;
-          
-          const turma = turmas.find(t => t.numero_turma === colab.turma_numero);
-          if (!turma || !turma.operacoes) return;
-
-          const opId = turma.operacoes.id;
-          if (mapaOps[opId]) {
-            if (d.tipo_registro !== 'Folga') mapaOps[opId].registrosValores += 1;
-            if (registrosAusencia.includes(d.tipo_registro)) {
-              mapaOps[opId].totalFaltas += 1;
-            }
-          }
-        });
-
-        const rankingCalculado = Object.values(mapaOps)
-          .filter(o => o.turmasAtivas > 0)
-          .map(o => ({
-            operacaoNome: o.nome,
-            codigo: o.codigo,
-            turmasAtivas: o.turmasAtivas,
-            taxaAbsenteismo: o.registrosValores > 0 ? (o.totalFaltas / o.registrosValores) * 100 : 0
-          }))
-          .sort((a, b) => b.taxaAbsenteismo - a.taxaAbsenteismo);
-
-        setRankingOperacoes(rankingCalculado);
-        processarTimelineFaltas(diario, registrosAusencia, timeframe);
+        setRankingAbs([...mapaOps].sort((a, b) => b.abs - a.abs));
+        setRankingTo([...mapaOps].sort((a, b) => b.to - a.to));
 
       } catch (err) {
-        console.error('Erro no dashboard:', err);
+        console.error('Erro:', err);
       } finally {
         setLoading(false);
       }
     }
-    carregarMétricasDashboard();
-  }, [timeframe]);
+    carregarDashboard();
+  }, []);
 
   if (loading) return <div className="p-10 text-center">Carregando métricas...</div>;
 
   return (
     <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold">Dashboard</h1>
+      <h1 className="text-2xl font-bold">Dashboard Geral</h1>
       
       {/* Cards de Métricas */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-lg shadow border">
-          <p className="text-sm text-gray-500">Turmas Ativas</p>
-          <p className="text-2xl font-bold">{metricas.totalTurmasAtivas}</p>
+        <div className="bg-white p-4 rounded-lg shadow border-l-4 border-blue-500">
+          <p className="text-xs font-bold text-gray-500 uppercase">Turmas Ativas</p>
+          <p className="text-2xl font-bold">{metricas.turmasAtivas}</p>
         </div>
-        <div className="bg-white p-4 rounded-lg shadow border">
-          <p className="text-sm text-gray-500">Operadores Ativos</p>
-          <p className="text-2xl font-bold">{metricas.totalOperadoresMatriculados}</p>
+        <div className="bg-white p-4 rounded-lg shadow border-l-4 border-emerald-500">
+          <p className="text-xs font-bold text-gray-500 uppercase">Turmas Finalizadas</p>
+          <p className="text-2xl font-bold">{metricas.turmasFinalizadas}</p>
         </div>
-        <div className="bg-white p-4 rounded-lg shadow border">
-          <p className="text-sm text-gray-500">Absenteísmo</p>
-          <p className="text-2xl font-bold text-red-600">{metricas.taxaAbsenteismoGlobal.toFixed(1)}%</p>
+        <div className="bg-white p-4 rounded-lg shadow border-l-4 border-indigo-500">
+          <p className="text-xs font-bold text-gray-500 uppercase">Em Treinamento</p>
+          <p className="text-2xl font-bold">{metricas.opsEmTreinamento}</p>
         </div>
-        <div className="bg-white p-4 rounded-lg shadow border">
-          <p className="text-sm text-gray-500">Turnover</p>
-          <p className="text-2xl font-bold text-orange-600">{metricas.taxaTurnoverGlobal.toFixed(1)}%</p>
+        <div className="bg-white p-4 rounded-lg shadow border-l-4 border-orange-500">
+          <p className="text-xs font-bold text-gray-500 uppercase">Turnover Mensal</p>
+          <p className="text-2xl font-bold">{metricas.toMensal.toFixed(1)}%</p>
         </div>
       </div>
 
-      {/* Ranking */}
-      <div className="bg-white p-6 rounded-lg shadow border">
-        <h2 className="font-bold mb-4">Ranking de Absenteísmo por Operação</h2>
-        <div className="space-y-2">
-          {rankingOperacoes.map((op, idx) => (
-            <div key={idx} className="flex justify-between items-center p-3 bg-gray-50 rounded">
-              <span className="font-medium">{op.operacaoNome}</span>
-              <span className="font-bold text-red-600">{op.taxaAbsenteismo.toFixed(1)}%</span>
-            </div>
-          ))}
+      {/* Rankings */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white p-6 rounded-lg shadow border">
+          <h2 className="font-bold mb-4 flex items-center gap-2"><AlertCircle className="w-4 h-4 text-red-600"/> Ranking ABS (Mensal)</h2>
+          <div className="space-y-2">
+            {rankingAbs.map((op, idx) => (
+              <div key={idx} className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                <span className="text-sm font-medium">{op.nome}</span>
+                <span className="font-bold text-red-600">{op.abs.toFixed(1)}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-lg shadow border">
+          <h2 className="font-bold mb-4 flex items-center gap-2"><TrendingDown className="w-4 h-4 text-orange-600"/> Ranking TO (Mensal)</h2>
+          <div className="space-y-2">
+            {rankingTo.map((op, idx) => (
+              <div key={idx} className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                <span className="text-sm font-medium">{op.nome}</span>
+                <span className="font-bold text-orange-600">{op.to.toFixed(1)}%</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
