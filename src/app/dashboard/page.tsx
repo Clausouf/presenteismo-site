@@ -6,7 +6,11 @@ import { Download } from 'lucide-react';
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
-  const [diarioData, setDiarioData] = useState<any[]>([]); // Novo estado para o CSV
+  
+  // Estados para exportação
+  const [diarioData, setDiarioData] = useState<any[]>([]);
+  const [colaboradores, setColaboradores] = useState<any[]>([]);
+  
   const [metricas, setMetricas] = useState({
     turmasAtivas: 0,
     turmasFinalizadas: 0,
@@ -21,11 +25,10 @@ export default function DashboardPage() {
   });
 
   const handleExport = () => {
-    // UTF-8 BOM para garantir acentos no Excel
-    let csvContent = "\ufeff"; 
+    let csvContent = "\ufeff"; // BOM para acentos
     csvContent += "Relatório Dashboard Geral\n\n";
     
-    // Métricas
+    // 1. Resumo
     csvContent += "Métrica,Valor\n";
     csvContent += `Turmas Ativas,${metricas.turmasAtivas}\n`;
     csvContent += `Turmas Finalizadas,${metricas.turmasFinalizadas}\n`;
@@ -33,34 +36,44 @@ export default function DashboardPage() {
     csvContent += `Turnover Mensal,${metricas.toMensal.toFixed(1)}%\n`;
     csvContent += `ABS Mensal,${metricas.absMensal.toFixed(1)}%\n\n`;
 
-    // Rankings Andamento
-    csvContent += "Ranking Turmas em Andamento\n";
-    csvContent += "Operação,ABS%,TO%\n";
+    // 2. Rankings
+    csvContent += "Ranking Turmas em Andamento (Operação),ABS%,TO%\n";
     rankings.andamento.abs.forEach(o => {
         const toVal = rankings.andamento.to.find(t => t.nome === o.nome)?.to || 0;
         csvContent += `${o.nome},${o.abs.toFixed(0)}%,${toVal.toFixed(0)}%\n`;
     });
 
-    // Rankings Finalizadas
-    csvContent += "\nRanking Turmas Finalizadas\n";
-    csvContent += "Operação,ABS%,TO%\n";
-    rankings.finalizadas.abs.forEach(o => {
-        const toVal = rankings.finalizadas.to.find(t => t.nome === o.nome)?.to || 0;
-        csvContent += `${o.nome},${o.abs.toFixed(0)}%,${toVal.toFixed(0)}%\n`;
-    });
+    // 3. Tabela Pivô (O pedido principal)
+    csvContent += "\nDetalhado Presença (Operador x Dia)\n";
+    
+    // Obter datas únicas do mês para criar as colunas
+    const uniqueDates = [...new Set(diarioData.map(d => d.data))].sort();
+    
+    // Cabeçalho: Turma, Operador, Data1, Data2, ...
+    csvContent += `Turma,Operador,${uniqueDates.join(',')}\n`;
 
-    // Detalhes do Diário (Nova Seção)
-    csvContent += "\nDetalhes Diário de Presença\n";
-    csvContent += "Data,Turma,Tipo de Registro\n";
-    diarioData.forEach(d => {
-        csvContent += `${d.data || ''},${d.turma_numero || ''},${d.tipo_registro || ''}\n`;
+    // Agrupar dados por operador (assumindo que existe nome_colaborador ou similar no diario ou linkando com colaboradores)
+    // Aqui estamos agrupando pelo ID do colaborador ou Nome que estiver no diário
+    const operadores = [...new Set(diarioData.map(d => d.nome_colaborador || 'Não informado'))];
+
+    operadores.forEach(opNome => {
+        const registrosDoOp = diarioData.filter(d => d.nome_colaborador === opNome);
+        const turma = registrosDoOp[0]?.turma_numero || '-';
+        
+        // Criar linha de registros por data
+        let row = `${turma},${opNome}`;
+        uniqueDates.forEach(date => {
+            const registroDoDia = registrosDoOp.find(d => d.data === date);
+            row += `,${registroDoDia ? registroDoDia.tipo_registro : '-'}`;
+        });
+        csvContent += row + "\n";
     });
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `relatorio_completo_${new Date().toLocaleDateString()}.csv`);
+    link.setAttribute("download", `relatorio_completo_pivot_${new Date().toLocaleDateString()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -83,19 +96,26 @@ export default function DashboardPage() {
 
         if (!turmasRes.data || !colabsRes.data || !diarioRes.data) return;
 
+        setColaboradores(colabsRes.data);
+        
+        // Unir diário com nome do colaborador para o relatório ficar completo
+        const diarioComNome = diarioRes.data.map(d => ({
+            ...d,
+            nome_colaborador: colabsRes.data.find(c => c.id === d.colaborador_id)?.nome || "Desconhecido"
+        })).filter(d => d.data && d.data.startsWith(filtroData));
+
+        setDiarioData(diarioComNome);
+
         const turmas = turmasRes.data;
         const colabs = colabsRes.data;
-        const diario = diarioRes.data.filter(d => d.data && d.data.startsWith(filtroData));
-        
-        setDiarioData(diario); // Salvando para o export
 
         const ativas = turmas.filter(t => t.status === 'Em Andamento');
         const finalizadas = turmas.filter(t => t.status === 'Finalizada');
         const emTreinamento = colabs.filter(c => ativas.map(t => t.numero_turma).includes(c.turma_numero));
         
-        const totalDesligGeral = diario.filter(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro)).length;
-        const totalRegistrosGeral = diario.filter(d => d.tipo_registro !== 'Folga').length;
-        const totalFaltasGeral = diario.filter(d => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(d.tipo_registro)).length;
+        const totalDesligGeral = diarioComNome.filter(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro)).length;
+        const totalRegistrosGeral = diarioComNome.filter(d => d.tipo_registro !== 'Folga').length;
+        const totalFaltasGeral = diarioComNome.filter(d => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(d.tipo_registro)).length;
 
         setMetricas({
           turmasAtivas: ativas.length,
@@ -111,7 +131,7 @@ export default function DashboardPage() {
             const turmasDaOp = turmasSubset.filter(t => t.operacoes?.nome === opNome);
             const numerosTurmas = turmasDaOp.map(t => t.numero_turma);
             const colabsOp = colabs.filter(c => numerosTurmas.includes(c.turma_numero));
-            const diarioOp = diario.filter(d => numerosTurmas.includes(d.turma_numero));
+            const diarioOp = diarioComNome.filter(d => numerosTurmas.includes(d.turma_numero));
             const totalReg = diarioOp.filter(d => d.tipo_registro !== 'Folga').length;
             const faltas = diarioOp.filter(d => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(d.tipo_registro)).length;
             const deslig = diarioOp.filter(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro)).length;
@@ -152,10 +172,11 @@ export default function DashboardPage() {
             onClick={handleExport}
             className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700 transition"
         >
-            <Download size={16} /> Exportar Relatório
+            <Download size={16} /> Exportar Relatório Detalhado
         </button>
       </div>
       
+      {/* ... [Restante do JSX do Dashboard mantém igual] ... */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div className="bg-white p-3 rounded shadow border-l-4 border-blue-500">
           <p className="text-[10px] font-bold text-gray-500 uppercase">Turmas Ativas</p>
