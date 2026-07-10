@@ -13,7 +13,8 @@ import {
   LogOut, 
   Menu, 
   X,
-  BookOpen
+  BookOpen,
+  UserPlus
 } from 'lucide-react';
 
 export function Sidebar() {
@@ -21,7 +22,7 @@ export function Sidebar() {
   const { logout, user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
 
-  const menuItems = [
+  const baseMenuItems = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
     { name: 'Criar Turmas', href: '/cadastro', icon: PlusCircle },
     { name: 'Diário de Presença', href: '/turmas', icon: BookOpen },
@@ -30,9 +31,14 @@ export function Sidebar() {
     { name: 'Configurações', href: '/configuracoes', icon: Sliders },
   ];
 
+  // Filtra itens: Adiciona "Novo Administrador" apenas se for Gerente
+  const menuItems = user?.perfil === 'Gerente' 
+    ? [...baseMenuItems, { name: 'Novo Administrador', href: '/criar-adm', icon: UserPlus }]
+    : baseMenuItems;
+
   return (
     <>
-      {/* Barra Superior Mobile (Mobile First) */}
+      {/* Barra Superior Mobile */}
       <div className="bg-slate-900 text-white flex items-center justify-between p-4 md:hidden fixed top-0 left-0 right-0 z-50 shadow-md">
         <h1 className="font-bold text-lg tracking-wide">Presenteísmo T&D</h1>
         <button onClick={() => setIsOpen(!isOpen)} className="p-1 hover:bg-slate-800 rounded">
@@ -40,19 +46,17 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* Menu Lateral Principal (Desktop & Mobile Drawer Overlay) */}
+      {/* Menu Lateral */}
       <aside className={`
         fixed top-0 bottom-0 left-0 z-40 w-64 bg-slate-900 text-slate-100 flex flex-col transition-transform duration-300 ease-in-out border-r border-slate-800
         md:translate-x-0 pt-16 md:pt-0
         ${isOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        {/* Header Superior - Desktop Only */}
         <div className="hidden md:flex flex-col p-6 border-b border-slate-800">
           <h1 className="font-extrabold text-xl tracking-tight text-white">Presenteísmo</h1>
           <p className="text-xs text-slate-400 mt-1">Gestão de T&D e R&S</p>
         </div>
 
-        {/* Info do Usuário Conectado */}
         {user && (
           <div className="px-6 py-4 border-b border-slate-800 bg-slate-950/40">
             <p className="text-sm font-medium text-white truncate">{user.nome}</p>
@@ -60,7 +64,6 @@ export function Sidebar() {
           </div>
         )}
 
-        {/* Lista de Navegação Estilizada */}
         <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
           {menuItems.map((item) => {
             const isActive = pathname === item.href;
@@ -84,7 +87,6 @@ export function Sidebar() {
           })}
         </nav>
 
-        {/* Botão de Saída Inferior (Logout) */}
         <div className="p-4 border-t border-slate-800 bg-slate-950/20">
           <button
             onClick={() => { logout(); setIsOpen(false); }}
@@ -96,12 +98,8 @@ export function Sidebar() {
         </div>
       </aside>
 
-      {/* Máscara de fundo escuro para fechar o menu mobile ao clicar fora */}
       {isOpen && (
-        <div 
-          onClick={() => setIsOpen(false)} 
-          className="fixed inset-0 bg-black/50 z-30 md:hidden"
-        />
+        <div onClick={() => setIsOpen(false)} className="fixed inset-0 bg-black/50 z-30 md:hidden" />
       )}
     </>
   );
