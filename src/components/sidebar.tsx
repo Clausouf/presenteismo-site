@@ -11,7 +11,7 @@ import {
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { logout, user, loading } = useAuth(); // Adicionamos 'loading'
+  const { logout, user, loading } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
 
   const baseMenuItems = [
@@ -23,7 +23,7 @@ export function Sidebar() {
     { name: 'Configurações', href: '/configuracoes', icon: Sliders },
   ];
 
-  // Verifica se é Gerente APENAS após o carregamento terminar
+  // Verifica se é Gerente apenas após o carregamento terminar
   const isGerente = !loading && user?.perfil?.toLowerCase() === 'gerente';
 
   const menuItems = isGerente 
@@ -32,27 +32,32 @@ export function Sidebar() {
 
   return (
     <>
+      {/* Barra Superior Mobile */}
       <div className="bg-slate-900 text-white flex items-center justify-between p-4 md:hidden fixed top-0 left-0 right-0 z-50 shadow-md">
-        <h1 className="font-bold text-lg tracking-wide">Presenteísmo T&D</h1>
+        <h1 className="font-bold text-sm tracking-wide">PRESENTEISMO SOFTMARKETING</h1>
         <button onClick={() => setIsOpen(!isOpen)} className="p-1 hover:bg-slate-800 rounded">
           {isOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
       </div>
 
+      {/* Menu Lateral */}
       <aside className={`
         fixed top-0 bottom-0 left-0 z-40 w-64 bg-slate-900 text-slate-100 flex flex-col transition-transform duration-300 ease-in-out border-r border-slate-800
         md:translate-x-0 pt-16 md:pt-0
         ${isOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
+        {/* Cabeçalho de Marca */}
         <div className="hidden md:flex flex-col p-6 border-b border-slate-800">
-          <h1 className="font-extrabold text-xl tracking-tight text-white">Presenteísmo</h1>
+          <h1 className="font-extrabold text-lg tracking-tight text-white">PRESENTEISMO</h1>
+          <h2 className="font-bold text-sm tracking-tight text-emerald-500">SOFTMARKETING</h2>
+          <p className="text-xs text-slate-400 mt-2 uppercase tracking-wider">Recrutamento & Treinamento</p>
         </div>
 
-        {/* Informação do usuário só aparece se não estiver carregando */}
+        {/* Info do Usuário */}
         {!loading && user && (
           <div className="px-6 py-4 border-b border-slate-800 bg-slate-950/40">
             <p className="text-sm font-medium text-white truncate">{user.nome}</p>
-            <p className="text-xs text-blue-400 font-medium tracking-wider uppercase mt-0.5">{user.perfil}</p>
+            <p className="text-xs text-emerald-400 font-medium tracking-wider uppercase mt-0.5">{user.perfil}</p>
           </div>
         )}
 
@@ -67,24 +72,33 @@ export function Sidebar() {
                 onClick={() => setIsOpen(false)}
                 className={`
                   flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200
-                  ${isActive ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800'}
+                  ${isActive 
+                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/10 font-semibold' 
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}
                 `}
               >
-                <Icon size={18} />
+                <Icon size={18} className={isActive ? 'text-white' : 'text-slate-400'} />
                 {item.name}
               </Link>
             );
           })}
         </nav>
 
+        {/* Botão de Saída */}
         <div className="p-4 border-t border-slate-800 bg-slate-950/20">
-          <button onClick={() => { logout(); setIsOpen(false); }} className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium text-rose-400 hover:bg-rose-500/10 rounded-lg">
-            <LogOut size={18} /> Sair
+          <button
+            onClick={() => { logout(); setIsOpen(false); }}
+            className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 rounded-lg transition-colors duration-200"
+          >
+            <LogOut size={18} />
+            Sair do Sistema
           </button>
         </div>
       </aside>
 
-      {isOpen && <div onClick={() => setIsOpen(false)} className="fixed inset-0 bg-black/50 z-30 md:hidden" />}
+      {isOpen && (
+        <div onClick={() => setIsOpen(false)} className="fixed inset-0 bg-black/50 z-30 md:hidden" />
+      )}
     </>
   );
 }
