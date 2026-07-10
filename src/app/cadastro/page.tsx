@@ -19,6 +19,7 @@ export default function CadastroTurmaPage() {
   const [equipe, setEquipe] = useState<any[]>([]);
   const [operacoes, setOperacoes] = useState<any[]>([]);
 
+  // Estados do formulário da Turma
   const [numeroTurma, setNumeroTurma] = useState('');
   const [operacaoId, setOperacaoId] = useState(''); 
   const [responsavelMatricula, setResponsavelMatricula] = useState('');
@@ -52,7 +53,6 @@ export default function CadastroTurmaPage() {
     loadData();
   }, []);
 
-  // Lógica para processar o texto colado do Excel
   const handleParseExcel = (text: string) => {
     const lines = text.split('\n').filter(line => line.trim() !== '');
     const novosColaboradores: NovoColaboradorItem[] = lines.map(line => {
@@ -69,23 +69,33 @@ export default function CadastroTurmaPage() {
     setColaboradores(novosColaboradores);
   };
 
+  // Função auxiliar para converter DD/MM/AAAA para AAAA-MM-DD pro banco de dados
+  const formatarDataParaBanco = (data: string) => {
+    if (!data) return null;
+    const partes = data.trim().split('/');
+    if (partes.length === 3) {
+      return `${partes[2]}-${partes[1]}-${partes[0]}`;
+    }
+    return data; // Retorna como está se já vier no padrão AAAA-MM-DD
+  };
+
   const handleSaveAll = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
     try {
-      // 1. Inserir a Turma
+      // 1. Inserir a Turma (Tratando strings vazias como null para evitar erros do Postgres)
       const { error: errorTurma } = await supabase
         .from('turmas')
         .insert({
           numero_turma: numeroTurma.trim(),
           responsavel_matricula: responsavelMatricula,
           operacao_id: Number(operacaoId),
-          data_inicio: dataInicio,
-          data_alo: dataAlo,
-          data_fim: dataFim,
-          sala: sala,
+          data_inicio: dataInicio || null,
+          data_alo: dataAlo || null,
+          data_fim: dataFim || null,
+          sala: sala || null,
           status: 'Em Andamento'
         });
 
@@ -97,7 +107,7 @@ export default function CadastroTurmaPage() {
         matricula: c.matricula.trim(),
         nome: c.nome.trim(),
         cpf: c.cpf.replace(/\D/g, ''),
-        data_admissao: c.data_admissao,
+        data_admissao: formatarDataParaBanco(c.data_admissao),
         jornada: c.jornada,
         grupo_30_horas: c.grupo_30_horas,
         status: 'Ativo'
@@ -114,46 +124,83 @@ export default function CadastroTurmaPage() {
     }
   };
 
-  if (loadingData) return <div className="p-10 text-center">Carregando...</div>;
+  if (loadingData) return <div className="p-10 text-center">Carregando dados necessários...</div>;
 
   if (success) {
     return (
-      <div className="max-w-xl mx-auto p-8 text-center">
-        <h2 className="text-2xl font-bold">Turma Cadastrada com Sucesso!</h2>
-        <button onClick={() => window.location.reload()} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded">Nova Turma</button>
+      <div className="max-w-xl mx-auto p-8 text-center bg-white rounded-xl shadow mt-10">
+        <h2 className="text-2xl font-bold text-emerald-600 mb-2">Turma Cadastrada com Sucesso!</h2>
+        <p className="text-slate-500 mb-6">A turma e os colaboradores foram salvos no banco de dados.</p>
+        <button onClick={() => window.location.reload()} className="px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors">
+          Cadastrar Nova Turma
+        </button>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Criação de Turmas</h1>
-      {error && <div className="p-4 bg-rose-50 text-rose-700 rounded-lg">{error}</div>}
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">Criação de Turmas</h1>
+        <p className="text-sm text-slate-500 mt-1">Preencha os dados da turma e importe os colaboradores copiando do Excel.</p>
+      </div>
+
+      {error && <div className="p-4 bg-rose-50 text-rose-700 border border-rose-200 rounded-lg font-medium">{error}</div>}
+      
       <form onSubmit={handleSaveAll} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
         {/* Coluna Esquerda: Dados da Turma */}
-        <div className="lg:col-span-1 bg-white p-6 rounded-xl border space-y-4">
-            {/* ... seus inputs de turma ... */}
-            <label className="block text-sm font-bold">Número da Turma *</label>
-            <input type="text" value={numeroTurma} onChange={(e) => setNumeroTurma(e.target.value)} className="w-full border rounded p-2" required />
-            <label className="block text-sm font-bold">Responsável *</label>
-            <select value={responsavelMatricula} onChange={(e) => setResponsavelMatricula(e.target.value)} className="w-full border rounded p-2" required>
-                <option value="">Selecione...</option>
-                {equipe.map((m) => <option key={m.matricula} value={m.matricula}>{m.nome}</option>)}
-            </select>
-            <label className="block text-sm font-bold">Operação *</label>
-            <select value={operacaoId} onChange={(e) => setOperacaoId(e.target.value)} className="w-full border rounded p-2" required>
-                <option value="">Selecione...</option>
-                {operacoes.map((o) => <option key={o.id} value={o.id}>{o.nome}</option>)}
-            </select>
+        <div className="lg:col-span-1 bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+            
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Número da Turma *</label>
+              <input type="text" value={numeroTurma} onChange={(e) => setNumeroTurma(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" required />
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Responsável *</label>
+              <select value={responsavelMatricula} onChange={(e) => setResponsavelMatricula(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" required>
+                  <option value="">Selecione...</option>
+                  {equipe.map((m) => <option key={m.matricula} value={m.matricula}>{m.nome}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Operação *</label>
+              <select value={operacaoId} onChange={(e) => setOperacaoId(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" required>
+                  <option value="">Selecione...</option>
+                  {operacoes.map((o) => <option key={o.id} value={o.id}>{o.nome}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Data Início *</label>
+              <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" required />
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Data 1º Alô</label>
+              <input type="date" value={dataAlo} onChange={(e) => setDataAlo(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" />
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Data Fim *</label>
+              <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" required />
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Sala</label>
+              <input type="text" value={sala} onChange={(e) => setSala(e.target.value)} placeholder="Ex: Sala 04" className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" />
+            </div>
         </div>
 
         {/* Coluna Direita: Importação em Lote */}
         <div className="lg:col-span-2 space-y-4">
-          <div className="bg-white p-6 rounded-xl border">
-            <h2 className="font-bold mb-2">Importar Operadores (Cole do Excel)</h2>
+          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+            <h2 className="font-bold text-slate-800 mb-2">Importar Operadores (Cole do Excel)</h2>
             <textarea 
-              className="w-full h-32 border rounded p-2 text-sm"
-              placeholder="Cole aqui os dados copiados do Excel (Matrícula, Nome, CPF, Data, Jornada, Grupo 30h)..."
+              className="w-full h-32 border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none font-mono"
+              placeholder="Cole aqui os dados copiados do Excel (Matrícula, Nome, CPF, Data Admissão, Jornada, Grupo 30h)..."
               value={excelPasteText}
               onChange={(e) => {
                 setExcelPasteText(e.target.value);
@@ -163,21 +210,29 @@ export default function CadastroTurmaPage() {
           </div>
 
           {colaboradores.length > 0 && (
-            <div className="bg-white rounded-xl border overflow-hidden">
-                <table className="w-full text-xs">
-                    <thead className="bg-slate-100">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <table className="w-full text-sm text-left">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600">
                         <tr>
-                            <th className="p-2">Matrícula</th>
-                            <th className="p-2">Nome</th>
-                            <th className="p-2">Ações</th>
+                            <th className="p-3 font-bold">Matrícula</th>
+                            <th className="p-3 font-bold">Nome</th>
+                            <th className="p-3 font-bold text-center w-20">Ações</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="divide-y divide-slate-100">
                         {colaboradores.map((c, idx) => (
-                            <tr key={idx} className="border-b">
-                                <td className="p-2">{c.matricula}</td>
-                                <td className="p-2">{c.nome}</td>
-                                <td className="p-2"><button type="button" onClick={() => setColaboradores(colaboradores.filter((_, i) => i !== idx))}><Trash2 size={14} className="text-red-500"/></button></td>
+                            <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                <td className="p-3 font-medium text-slate-800">{c.matricula}</td>
+                                <td className="p-3 text-slate-600">{c.nome}</td>
+                                <td className="p-3 text-center w-20">
+                                  <button 
+                                    type="button" 
+                                    onClick={() => setColaboradores(colaboradores.filter((_, i) => i !== idx))}
+                                    className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-md transition-colors"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </td>
                             </tr>
                         ))}
                     </tbody>
@@ -185,8 +240,12 @@ export default function CadastroTurmaPage() {
             </div>
           )}
 
-          <button type="submit" disabled={loading || colaboradores.length === 0} className="w-full bg-blue-600 text-white p-3 rounded-lg font-bold disabled:bg-gray-300">
-            {loading ? 'Salvando...' : 'Salvar Turma e Operadores'}
+          <button 
+            type="submit" 
+            disabled={loading || colaboradores.length === 0} 
+            className="w-full bg-blue-600 text-white p-4 rounded-xl font-bold hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors shadow-sm"
+          >
+            {loading ? 'Salvando dados...' : 'Salvar Turma e Operadores'}
           </button>
         </div>
       </form>
