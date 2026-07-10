@@ -70,13 +70,14 @@ function TabelaTurma({ turma, colaboradores, presencas, obsInicial, onUpdate, on
                   <span className="cursor-help border-b border-dotted border-slate-400 pb-0.5 hover:text-blue-600 transition-colors">
                     {c.nome}
                   </span>
-                  {/* Tooltip com colunas corrigidas para: jornada e grupo_30_horas */}
+                  
+                  {/* Tooltip com lógica corrigida: se true = "Sim", caso contrário = "-" */}
                   <div className="absolute left-0 top-full mt-2 w-64 bg-slate-800 text-white p-3 rounded-lg shadow-xl hidden group-hover:block z-50 text-[11px] pointer-events-none border border-slate-700">
                     <div className="space-y-1.5">
                       <p className="font-bold border-b border-slate-700 pb-1 mb-1 text-blue-400">{c.nome}</p>
                       <p><span className="text-slate-400">Matrícula:</span> {c.matricula}</p>
-                      <p><span className="text-slate-400">Jornada:</span> {c.jornada || 'Não Informado'}</p>
-                      <p><span className="text-slate-400">Grupo 30h:</span> {c.grupo_30_horas || 'Não Informado'}</p>
+                      <p><span className="text-slate-400">Jornada:</span> {c.jornada || '-'}</p>
+                      <p><span className="text-slate-400">Grupo 30h:</span> {c.grupo_30_horas === true ? 'Sim' : '-'}</p>
                     </div>
                   </div>
                 </td>
@@ -180,8 +181,18 @@ export default function DiarioPresencaPage() {
   };
 
   const handleStatusChange = async (turmaNum: string, novoStatus: string) => {
-    const { error } = await supabase.from('turmas').update({ status: novoStatus }).eq('numero_turma', turmaNum);
-    if (error) { alert("Erro ao salvar status"); return; }
+    // Tenta atualizar no Supabase
+    const { error } = await supabase
+      .from('turmas')
+      .update({ status: novoStatus })
+      .eq('numero_turma', turmaNum); // Verifica se o nome da coluna é este mesmo
+
+    if (error) { 
+      alert("Erro ao salvar no banco: " + error.message); 
+      return; 
+    }
+    
+    // Atualiza localmente
     setTurmas(prev => prev.map(t => t.numero_turma === turmaNum ? { ...t, status: novoStatus } : t));
   };
 
