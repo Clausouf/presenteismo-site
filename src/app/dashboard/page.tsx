@@ -69,4 +69,82 @@ export default function DashboardPage() {
             return {
               nome: op.nome,
               abs: totalReg > 0 ? (faltas / totalReg) * 100 : 0,
-              to: colabsOp.length > 0 ? (des
+              to: colabsOp.length > 0 ? (deslig / colabsOp.length) * 100 : 0
+            };
+          });
+          return {
+            abs: [...dados].sort((a, b) => b.abs - a.abs),
+            to: [...dados].sort((a, b) => b.to - a.to)
+          };
+        };
+
+        setRankings({
+          andamento: getRankings(ativas),
+          finalizadas: getRankings(finalizadas)
+        });
+
+      } catch (err) {
+        console.error('Erro:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    carregarDashboard();
+  }, []);
+
+  if (loading) return <div className="p-4 text-center">Carregando...</div>;
+
+  return (
+    <div className="p-4 space-y-4 text-sm">
+      <h1 className="text-xl font-bold">Dashboard Geral</h1>
+      
+      {/* Cards */}
+      <div className="grid grid-cols-4 gap-4">
+        {[
+          { label: 'Turmas Ativas', val: metricas.turmasAtivas, color: 'blue' },
+          { label: 'Turmas Finalizadas', val: metricas.turmasFinalizadas, color: 'emerald' },
+          { label: 'OPERADORES EM TREINAMENTO', val: metricas.opsEmTreinamento, color: 'indigo' },
+          { label: 'Turnover Mensal', val: `${metricas.toMensal.toFixed(1)}%`, color: 'orange' },
+        ].map((item, i) => (
+          <div key={i} className={`bg-white p-3 rounded shadow border-l-4 border-${item.color}-500`}>
+            <p className="text-[10px] font-bold text-gray-500 uppercase">{item.label}</p>
+            <p className="text-xl font-bold">{item.val}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Rankings */}
+      <div className="grid grid-cols-2 gap-4">
+        {/* Andamento */}
+        <div className="bg-white p-4 rounded shadow">
+          <h2 className="font-bold mb-2 text-blue-600">Turmas em Andamento</h2>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <p className="text-xs font-bold mb-1">Ranking ABS</p>
+              {rankings.andamento.abs.map((o, i) => <div key={i} className="flex justify-between py-1 border-b text-[10px]"><span>{o.nome}</span><span className="text-red-600 font-bold">{o.abs.toFixed(0)}%</span></div>)}
+            </div>
+            <div>
+              <p className="text-xs font-bold mb-1">Ranking TO</p>
+              {rankings.andamento.to.map((o, i) => <div key={i} className="flex justify-between py-1 border-b text-[10px]"><span>{o.nome}</span><span className="text-orange-600 font-bold">{o.to.toFixed(0)}%</span></div>)}
+            </div>
+          </div>
+        </div>
+
+        {/* Finalizadas */}
+        <div className="bg-white p-4 rounded shadow">
+          <h2 className="font-bold mb-2 text-emerald-600">Turmas Finalizadas</h2>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <p className="text-xs font-bold mb-1">Ranking ABS</p>
+              {rankings.finalizadas.abs.map((o, i) => <div key={i} className="flex justify-between py-1 border-b text-[10px]"><span>{o.nome}</span><span className="text-red-600 font-bold">{o.abs.toFixed(0)}%</span></div>)}
+            </div>
+            <div>
+              <p className="text-xs font-bold mb-1">Ranking TO</p>
+              {rankings.finalizadas.to.map((o, i) => <div key={i} className="flex justify-between py-1 border-b text-[10px]"><span>{o.nome}</span><span className="text-orange-600 font-bold">{o.to.toFixed(0)}%</span></div>)}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
