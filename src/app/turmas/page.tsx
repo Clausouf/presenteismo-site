@@ -21,21 +21,31 @@ function DiarioPresencaContent() {
   const router = useRouter();
 
   const [turmas, setTurmas] = useState<Turma[]>([]);
+  const [operacoes, setOperacoes] = useState<any[]>([]);
+  const [selectedOperacaoId, setSelectedOperacaoId] = useState<string>('todos');
   const [selectedTurma, setSelectedTurma] = useState<Turma | null>(null);
+  
   const [colaboradores, setColaboradores] = useState<Colaborador[]>([]);
   const [presencas, setPresencas] = useState<Record<string, DiarioPresenca>>({}); 
   const [datasLista, setDatasLista] = useState<string[]>([]);
   const [observacoes, setObservacoes] = useState('');
+  
   const [loading, setLoading] = useState(false);
 
+  // Carrega turmas e operações na inicialização
   useEffect(() => {
-    async function loadData() {
-      const { data } = await supabase.from('turmas').select('*');
-      if (data) setTurmas(data);
+    async function loadInitialData() {
+      const [resTurmas, resOps] = await Promise.all([
+        supabase.from('turmas').select('*'),
+        supabase.from('operacoes').select('*')
+      ]);
+      if (resTurmas.data) setTurmas(resTurmas.data);
+      if (resOps.data) setOperacoes(resOps.data);
+      
       const queryNum = searchParams.get('turma');
       if (queryNum) carregarDiario(queryNum);
     }
-    loadData();
+    loadInitialData();
   }, []);
 
   async function carregarDiario(num: string) {
@@ -97,14 +107,51 @@ function DiarioPresencaContent() {
     return { absPercent, desligamentosPercent };
   };
 
+  // Filtragem de turmas pela operação selecionada
+  const turmasFiltradas = selectedOperacaoId === 'todos' 
+    ? turmas 
+    : turmas.filter(t => t.operacao_id === Number(selectedOperacaoId));
+
   return (
     <div className="space-y-6 p-4">
-      <select onChange={(e) => carregarDiario(e.target.value)} className="p-2 border rounded-lg w-full">
-        <option value="">Selecione uma turma...</option>
-        {turmas.map(t => <option key={t.numero_turma} value={t.numero_turma}>Turma {t.numero_turma}</option>)}
-      </select>
+      {/* Cabeçalho de Seleção */}
+      <div className="grid grid-cols-2 gap-4 bg-white p-4 rounded-lg border shadow-sm">
+        <div>
+          <label className="block text-xs font-bold text-slate-500 mb-1">OPERAÇÃO</label>
+          <select 
+            className="w-full p-2 border rounded-lg text-sm"
+            onChange={(e) => {
+              setSelectedOperacaoId(e.target.value);
+              setSelectedTurma(null); // Reseta turma ao mudar operação
+            }}
+          >
+            <option value="todos">Todas as Operações</option>
+            {operacoes.map(op => <option key={op.id} value={op.id}>{op.nome}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-slate-500 mb-1">TURMA</label>
+          <select 
+            value={selectedTurma?.numero_turma || ''}
+            className="w-full p-2 border rounded-lg text-sm"
+            onChange={(e) => {
+              if (e.target.value) {
+                carregarDiario(e.target.value);
+                router.replace(`/turmas?turma=${e.target.value}`);
+              }
+            }}
+          >
+            <option value="">Selecione uma turma...</option>
+            {turmasFiltradas.map(t => (
+              <option key={t.numero_turma} value={t.numero_turma}>
+                Turma {t.numero_turma} ({t.status})
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
 
-      {selectedTurma && (
+      {selectedTurma && !loading && (
         <div className="space-y-4">
           <div className="overflow-x-auto bg-white rounded-lg border">
             <table className="w-full text-left">
