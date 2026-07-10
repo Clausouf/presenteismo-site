@@ -32,7 +32,6 @@ function DiarioPresencaContent() {
   
   const [loading, setLoading] = useState(false);
 
-  // Carrega turmas e operações na inicialização
   useEffect(() => {
     async function loadInitialData() {
       const [resTurmas, resOps] = await Promise.all([
@@ -80,10 +79,19 @@ function DiarioPresencaContent() {
   };
 
   const handleUpdatePresence = async (matricula: string, nome: string, dataStr: string, status: string) => {
-    const { data } = await supabase.from('diario_presenca').upsert({
-      turma_numero: selectedTurma?.numero_turma, matricula, colaborador_nome: nome, data: dataStr, tipo_registro: status
-    }).select().single();
-    if (data) setPresencas(prev => ({ ...prev, [`${matricula}_${dataStr}`]: data }));
+    const chave = `${matricula}_${dataStr}`;
+
+    if (status === '') {
+      // Se selecionou "--", deleta o registro do banco
+      await supabase.from('diario_presenca').delete().eq('turma_numero', selectedTurma?.numero_turma).eq('matricula', matricula).eq('data', dataStr);
+      setPresencas(prev => { const next = { ...prev }; delete next[chave]; return next; });
+    } else {
+      // Caso contrário, insere ou atualiza
+      const { data } = await supabase.from('diario_presenca').upsert({
+        turma_numero: selectedTurma?.numero_turma, matricula, colaborador_nome: nome, data: dataStr, tipo_registro: status
+      }).select().single();
+      if (data) setPresencas(prev => ({ ...prev, [chave]: data }));
+    }
   };
 
   const saveObservacoes = async (texto: string) => {
@@ -91,11 +99,9 @@ function DiarioPresencaContent() {
     await supabase.from('turmas').update({ observacoes: texto }).eq('numero_turma', selectedTurma.numero_turma);
   };
 
-  // Cálculo de indicadores em porcentagem
   const calcularIndicadores = (dataStr: string) => {
     const registrosDoDia = colaboradores.map(c => presencas[`${c.matricula}_${dataStr}`]?.tipo_registro);
     const total = colaboradores.length;
-    
     if (total === 0) return { absPercent: "0", desligamentosPercent: "0" };
 
     const faltas = registrosDoDia.filter(s => s === 'Falta Injustificada' || s === 'Falta Integração').length;
@@ -107,46 +113,23 @@ function DiarioPresencaContent() {
     return { absPercent, desligamentosPercent };
   };
 
-  // Filtragem de turmas pela operação selecionada
-  const turmasFiltradas = selectedOperacaoId === 'todos' 
-    ? turmas 
-    : turmas.filter(t => t.operacao_id === Number(selectedOperacaoId));
+  const turmasFiltradas = selectedOperacaoId === 'todos' ? turmas : turmas.filter(t => t.operacao_id === Number(selectedOperacaoId));
 
   return (
     <div className="space-y-6 p-4">
-      {/* Cabeçalho de Seleção */}
       <div className="grid grid-cols-2 gap-4 bg-white p-4 rounded-lg border shadow-sm">
         <div>
           <label className="block text-xs font-bold text-slate-500 mb-1">OPERAÇÃO</label>
-          <select 
-            className="w-full p-2 border rounded-lg text-sm"
-            onChange={(e) => {
-              setSelectedOperacaoId(e.target.value);
-              setSelectedTurma(null); // Reseta turma ao mudar operação
-            }}
-          >
+          <select className="w-full p-2 border rounded-lg text-sm" onChange={(e) => { setSelectedOperacaoId(e.target.value); setSelectedTurma(null); }}>
             <option value="todos">Todas as Operações</option>
             {operacoes.map(op => <option key={op.id} value={op.id}>{op.nome}</option>)}
           </select>
         </div>
         <div>
           <label className="block text-xs font-bold text-slate-500 mb-1">TURMA</label>
-          <select 
-            value={selectedTurma?.numero_turma || ''}
-            className="w-full p-2 border rounded-lg text-sm"
-            onChange={(e) => {
-              if (e.target.value) {
-                carregarDiario(e.target.value);
-                router.replace(`/turmas?turma=${e.target.value}`);
-              }
-            }}
-          >
+          <select value={selectedTurma?.numero_turma || ''} className="w-full p-2 border rounded-lg text-sm" onChange={(e) => { if (e.target.value) { carregarDiario(e.target.value); router.replace(`/turmas?turma=${e.target.value}`); } }}>
             <option value="">Selecione uma turma...</option>
-            {turmasFiltradas.map(t => (
-              <option key={t.numero_turma} value={t.numero_turma}>
-                Turma {t.numero_turma} ({t.status})
-              </option>
-            ))}
+            {turmasFiltradas.map(t => <option key={t.numero_turma} value={t.numero_turma}>Turma {t.numero_turma} ({t.status})</option>)}
           </select>
         </div>
       </div>
@@ -156,13 +139,19 @@ function DiarioPresencaContent() {
           <div className="overflow-x-auto bg-white rounded-lg border">
             <table className="w-full text-left">
               <thead>
+                {/* Linha da Turma */}
+                <tr className="bg-slate-100">
+                  <th className="p-2 text-xs text-slate-600"></th>
+                  <th colSpan={datasLista.length} className="text-center text-sm font-bold text-slate-800 p-2 uppercase tracking-wider">
+                    Turma {selectedTurma.numero_turma}
+                  </th>
+                </tr>
+                {/* Linha da Legenda */}
                 <tr>
                    <th className="p-2 text-[10px] text-slate-400">OPERADOR</th>
                    {datasLista.map((d, i) => (
                      <th key={d} className="text-center">
-                        <div className="text-[9px] text-blue-600 font-bold uppercase">
-                          {i === 0 ? 'Integração' : (i >= datasLista.length - 3 ? 'Acomp.' : 'Treinamento')}
-                        </div>
+                        <div className="text-[9px] text-blue-600 font-bold uppercase">{i === 0 ? 'Integração' : (i >= datasLista.length - 3 ? 'Acomp.' : 'Treinamento')}</div>
                         <div className="text-xs">{d.split('-')[2]}</div>
                      </th>
                    ))}
@@ -177,7 +166,7 @@ function DiarioPresencaContent() {
                         <select 
                           value={presencas[`${c.matricula}_${d}`]?.tipo_registro || ''} 
                           onChange={(e) => handleUpdatePresence(c.matricula, c.nome, d, e.target.value)}
-                          className="w-full text-[10px] border rounded p-1"
+                          className={`w-full text-[10px] border rounded p-1 ${presencas[`${c.matricula}_${d}`]?.tipo_registro ? 'bg-slate-50' : ''}`}
                         >
                           {STATUS_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                         </select>
