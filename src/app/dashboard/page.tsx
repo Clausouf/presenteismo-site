@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { AlertCircle, TrendingDown } from 'lucide-react';
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
@@ -11,6 +10,7 @@ export default function DashboardPage() {
     turmasFinalizadas: 0,
     opsEmTreinamento: 0,
     toMensal: 0,
+    absMensal: 0, // Novo card
   });
 
   const [rankings, setRankings] = useState({
@@ -41,20 +41,24 @@ export default function DashboardPage() {
         const diario = diarioRes.data.filter(d => d.data && d.data.startsWith(filtroData));
         const operacoes = opsRes.data;
 
-        // Métricas Globais
+        // Cálculos Globais
         const ativas = turmas.filter(t => t.status === 'Em Andamento');
         const finalizadas = turmas.filter(t => t.status === 'Finalizada');
         const emTreinamento = colabs.filter(c => ativas.map(t => t.numero_turma).includes(c.turma_numero));
+        
         const totalDesligGeral = diario.filter(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro)).length;
+        const totalRegistrosGeral = diario.filter(d => d.tipo_registro !== 'Folga').length;
+        const totalFaltasGeral = diario.filter(d => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(d.tipo_registro)).length;
 
         setMetricas({
           turmasAtivas: ativas.length,
           turmasFinalizadas: finalizadas.length,
           opsEmTreinamento: emTreinamento.length,
-          toMensal: colabs.length > 0 ? (totalDesligGeral / colabs.length) * 100 : 0
+          toMensal: colabs.length > 0 ? (totalDesligGeral / colabs.length) * 100 : 0,
+          absMensal: totalRegistrosGeral > 0 ? (totalFaltasGeral / totalRegistrosGeral) * 100 : 0
         });
 
-        // Função para calcular rankings por subconjunto de turmas
+        // Rankings
         const getRankings = (turmasSubset: any[]) => {
           const dados = operacoes.map(op => {
             const turmasOp = turmasSubset.filter(t => t.operacoes?.id === op.id);
@@ -98,13 +102,14 @@ export default function DashboardPage() {
     <div className="p-4 space-y-4 text-sm">
       <h1 className="text-xl font-bold">Dashboard Geral</h1>
       
-      {/* Cards */}
-      <div className="grid grid-cols-4 gap-4">
+      {/* Cards com Cores Personalizadas */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {[
           { label: 'Turmas Ativas', val: metricas.turmasAtivas, color: 'blue' },
-          { label: 'Turmas Finalizadas', val: metricas.turmasFinalizadas, color: 'emerald' },
-          { label: 'OPERADORES EM TREINAMENTO', val: metricas.opsEmTreinamento, color: 'indigo' },
-          { label: 'Turnover Mensal', val: `${metricas.toMensal.toFixed(1)}%`, color: 'orange' },
+          { label: 'Turmas Finalizadas', val: metricas.turmasFinalizadas, color: 'green' },
+          { label: 'OPERADORES EM TREINAMENTO', val: metricas.opsEmTreinamento, color: 'pink' },
+          { label: 'Turnover Mensal', val: `${metricas.toMensal.toFixed(1)}%`, color: 'red' },
+          { label: 'ABS Mensal', val: `${metricas.absMensal.toFixed(1)}%`, color: 'yellow' },
         ].map((item, i) => (
           <div key={i} className={`bg-white p-3 rounded shadow border-l-4 border-${item.color}-500`}>
             <p className="text-[10px] font-bold text-gray-500 uppercase">{item.label}</p>
@@ -114,8 +119,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Rankings */}
-      <div className="grid grid-cols-2 gap-4">
-        {/* Andamento */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white p-4 rounded shadow">
           <h2 className="font-bold mb-2 text-blue-600">Turmas em Andamento</h2>
           <div className="grid grid-cols-2 gap-2">
@@ -130,7 +134,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Finalizadas */}
         <div className="bg-white p-4 rounded shadow">
           <h2 className="font-bold mb-2 text-emerald-600">Turmas Finalizadas</h2>
           <div className="grid grid-cols-2 gap-2">
