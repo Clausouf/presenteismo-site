@@ -10,7 +10,7 @@ export default function DashboardPage() {
     turmasFinalizadas: 0,
     opsEmTreinamento: 0,
     toMensal: 0,
-    absMensal: 0, // Novo card
+    absMensal: 0,
   });
 
   const [rankings, setRankings] = useState({
@@ -27,19 +27,17 @@ export default function DashboardPage() {
         const anoAtual = hoje.getFullYear();
         const filtroData = `${anoAtual}-${mesAtual}`;
 
-        const [turmasRes, colabsRes, diarioRes, opsRes] = await Promise.all([
-          supabase.from('turmas').select('*, operacoes(*)'),
+        const [turmasRes, colabsRes, diarioRes] = await Promise.all([
+          supabase.from('turmas').select('*'),
           supabase.from('colaboradores').select('*'),
           supabase.from('diario_presenca').select('*'), 
-          supabase.from('operacoes').select('*')
         ]);
 
-        if (!turmasRes.data || !colabsRes.data || !diarioRes.data || !opsRes.data) return;
+        if (!turmasRes.data || !colabsRes.data || !diarioRes.data) return;
 
         const turmas = turmasRes.data;
         const colabs = colabsRes.data;
         const diario = diarioRes.data.filter(d => d.data && d.data.startsWith(filtroData));
-        const operacoes = opsRes.data;
 
         // Cálculos Globais
         const ativas = turmas.filter(t => t.status === 'Em Andamento');
@@ -58,24 +56,23 @@ export default function DashboardPage() {
           absMensal: totalRegistrosGeral > 0 ? (totalFaltasGeral / totalRegistrosGeral) * 100 : 0
         });
 
-        // Rankings
-        const getRankings = (turmasSubset: any[]) => {
-          const dados = operacoes.map(op => {
-            const turmasOp = turmasSubset.filter(t => t.operacoes?.id === op.id);
-            const turmasOpIds = turmasOp.map(t => t.numero_turma);
-            const colabsOp = colabs.filter(c => turmasOpIds.includes(c.turma_numero));
-            const diarioOp = diario.filter(d => turmasOpIds.includes(d.turma_numero));
+        // Nova lógica: Mapear TURMAS (não operações) para ter listas curtas e dinâmicas
+        const getTurmaRankings = (turmasSubset: any[]) => {
+          const dados = turmasSubset.map(turma => {
+            const colabsTurma = colabs.filter(c => c.turma_numero === turma.numero_turma);
+            const diarioTurma = diario.filter(d => d.turma_numero === turma.numero_turma);
             
-            const totalReg = diarioOp.filter(d => d.tipo_registro !== 'Folga').length;
-            const faltas = diarioOp.filter(d => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(d.tipo_registro)).length;
-            const deslig = diarioOp.filter(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro)).length;
+            const totalReg = diarioTurma.filter(d => d.tipo_registro !== 'Folga').length;
+            const faltas = diarioTurma.filter(d => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(d.tipo_registro)).length;
+            const deslig = diarioTurma.filter(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro)).length;
 
             return {
-              nome: op.nome,
+              nome: `Turma ${turma.numero_turma}`,
               abs: totalReg > 0 ? (faltas / totalReg) * 100 : 0,
-              to: colabsOp.length > 0 ? (deslig / colabsOp.length) * 100 : 0
+              to: colabsTurma.length > 0 ? (deslig / colabsTurma.length) * 100 : 0
             };
           });
+
           return {
             abs: [...dados].sort((a, b) => b.abs - a.abs),
             to: [...dados].sort((a, b) => b.to - a.to)
@@ -83,8 +80,8 @@ export default function DashboardPage() {
         };
 
         setRankings({
-          andamento: getRankings(ativas),
-          finalizadas: getRankings(finalizadas)
+          andamento: getTurmaRankings(ativas),
+          finalizadas: getTurmaRankings(finalizadas)
         });
 
       } catch (err) {
@@ -102,25 +99,34 @@ export default function DashboardPage() {
     <div className="p-4 space-y-4 text-sm">
       <h1 className="text-xl font-bold">Dashboard Geral</h1>
       
-      {/* Cards com Cores Personalizadas */}
+      {/* Cards com Cores Fixas */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        {[
-          { label: 'Turmas Ativas', val: metricas.turmasAtivas, color: 'blue' },
-          { label: 'Turmas Finalizadas', val: metricas.turmasFinalizadas, color: 'green' },
-          { label: 'OPERADORES EM TREINAMENTO', val: metricas.opsEmTreinamento, color: 'pink' },
-          { label: 'Turnover Mensal', val: `${metricas.toMensal.toFixed(1)}%`, color: 'red' },
-          { label: 'ABS Mensal', val: `${metricas.absMensal.toFixed(1)}%`, color: 'yellow' },
-        ].map((item, i) => (
-          <div key={i} className={`bg-white p-3 rounded shadow border-l-4 border-${item.color}-500`}>
-            <p className="text-[10px] font-bold text-gray-500 uppercase">{item.label}</p>
-            <p className="text-xl font-bold">{item.val}</p>
-          </div>
-        ))}
+        <div className="bg-white p-3 rounded shadow border-l-4 border-blue-500">
+          <p className="text-[10px] font-bold text-gray-500 uppercase">Turmas Ativas</p>
+          <p className="text-xl font-bold">{metricas.turmasAtivas}</p>
+        </div>
+        <div className="bg-white p-3 rounded shadow border-l-4 border-green-500">
+          <p className="text-[10px] font-bold text-gray-500 uppercase">Turmas Finalizadas</p>
+          <p className="text-xl font-bold">{metricas.turmasFinalizadas}</p>
+        </div>
+        <div className="bg-white p-3 rounded shadow border-l-4 border-pink-500">
+          <p className="text-[10px] font-bold text-gray-500 uppercase">OP. EM TREINAMENTO</p>
+          <p className="text-xl font-bold">{metricas.opsEmTreinamento}</p>
+        </div>
+        <div className="bg-white p-3 rounded shadow border-l-4 border-red-500">
+          <p className="text-[10px] font-bold text-gray-500 uppercase">Turnover Mensal</p>
+          <p className="text-xl font-bold">{metricas.toMensal.toFixed(1)}%</p>
+        </div>
+        <div className="bg-white p-3 rounded shadow border-l-4 border-yellow-500">
+          <p className="text-[10px] font-bold text-gray-500 uppercase">ABS Mensal</p>
+          <p className="text-xl font-bold">{metricas.absMensal.toFixed(1)}%</p>
+        </div>
       </div>
 
       {/* Rankings */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-white p-4 rounded shadow">
+        {/* Andamento (Apenas as ativas) */}
+        <div className="bg-white p-4 rounded shadow border border-blue-100">
           <h2 className="font-bold mb-2 text-blue-600">Turmas em Andamento</h2>
           <div className="grid grid-cols-2 gap-2">
             <div>
@@ -134,7 +140,8 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded shadow">
+        {/* Finalizadas */}
+        <div className="bg-white p-4 rounded shadow border border-green-100">
           <h2 className="font-bold mb-2 text-emerald-600">Turmas Finalizadas</h2>
           <div className="grid grid-cols-2 gap-2">
             <div>
