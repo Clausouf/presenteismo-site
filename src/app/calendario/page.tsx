@@ -8,13 +8,16 @@ export default function CalendarioPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
 
-  // Carregar turmas
+  // Carregar turmas com o nome da operação
   useEffect(() => {
     async function carregarTurmas() {
+      // Ajuste: incluímos o join com a tabela 'operacoes' para buscar o 'nome'
+      // Se sua tabela tiver outro nome, substitua 'operacoes' abaixo
       const { data } = await supabase
         .from('turmas')
-        .select('*')
+        .select('*, operacoes(nome)') 
         .eq('status', 'Em Andamento');
+      
       if (data) setTurmas(data);
     }
     carregarTurmas();
@@ -23,10 +26,9 @@ export default function CalendarioPage() {
   // Navegação de mês
   const changeMonth = (offset: number) => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + offset, 1));
-    setSelectedDay(null); // Reseta a seleção ao mudar de mês
+    setSelectedDay(null);
   };
 
-  // Gerar grade do mês
   const getDaysInMonth = () => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
@@ -34,12 +36,11 @@ export default function CalendarioPage() {
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     
     const days = [];
-    for (let i = 0; i < firstDay; i++) days.push(null); // Padding inicial
+    for (let i = 0; i < firstDay; i++) days.push(null);
     for (let i = 1; i <= daysInMonth; i++) days.push(new Date(year, month, i));
     return days;
   };
 
-  // Filtra turmas por dia
   const getTurmasDoDia = (date: Date) => {
     return turmas.filter(t => {
       const start = new Date(t.data_inicio + 'T00:00:00');
@@ -86,7 +87,7 @@ export default function CalendarioPage() {
                     <div className="mt-2 space-y-1">
                       {getTurmasDoDia(date).map((t) => (
                         <div key={t.numero_turma} className="bg-blue-600 text-white text-[9px] p-1 rounded truncate">
-                          T{t.numero_turma} - Op {t.operacao_id}
+                          T{t.numero_turma} - {t.operacoes?.nome || 'Sem Operação'}
                         </div>
                       ))}
                     </div>
@@ -114,7 +115,7 @@ export default function CalendarioPage() {
                   getTurmasDoDia(selectedDay).map((t) => (
                     <div key={t.numero_turma} className="p-3 border rounded-lg bg-slate-50">
                       <p className="font-bold text-blue-800">Turma {t.numero_turma}</p>
-                      <p className="text-xs text-slate-500 mb-2">Operação ID: {t.operacao_id}</p>
+                      <p className="text-xs text-slate-500 mb-2">Operação: {t.operacoes?.nome || 'N/A'}</p>
                       <div className="text-sm">
                         <span className="font-semibold text-slate-700">Sala: </span>
                         <span className="text-slate-600">{t.sala || 'Não definida'}</span>
