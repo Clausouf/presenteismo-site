@@ -1,7 +1,7 @@
 'use client';
 
 import { AuthProvider, useAuth } from '@/hooks/use-auth';
-import { LayoutDashboard, Calendar, Users, PlusCircle, LogOut, UserPlus } from 'lucide-react';
+import { LayoutDashboard, Calendar, Users, PlusCircle, LogOut } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -26,11 +26,11 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
     { name: 'Diário de Presença', href: '/turmas', icon: Users },
     { name: 'Calendário Mensal', href: '/calendario', icon: Calendar },
     { name: 'Criar Turma/Lote', href: '/cadastro', icon: PlusCircle },
-    { name: 'Novo Administrador', href: '/criar-adm', icon: UserPlus },
   ];
 
   return (
     <div className="flex min-h-screen bg-slate-100 text-slate-900">
+      {/* Sidebar Fixo */}
       <aside className="w-64 bg-slate-900 text-slate-200 flex flex-col justify-between border-r border-slate-800 shadow-xl shrink-0">
         <div className="p-6">
           <div className="flex items-center gap-2 font-black text-lg tracking-wider text-white uppercase">
@@ -60,6 +60,7 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
           </nav>
         </div>
 
+        {/* Rodapé do Perfil com Logout */}
         <div className="p-4 border-t border-slate-800/60 bg-slate-950/40 flex items-center justify-between gap-2">
           <div className="truncate pr-2">
             <p className="text-xs font-bold text-white truncate">{user.email?.split('@')[0]}</p>
@@ -75,6 +76,7 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
+      {/* Área de Conteúdo da Página */}
       <main className="flex-1 p-6 md:p-8 overflow-y-auto max-w-7xl mx-auto w-full">
         {children}
       </main>
