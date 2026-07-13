@@ -6,11 +6,15 @@ import { LayoutDashboard, Calendar, Users, PlusCircle, LogOut, UserPlus } from '
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
+// Alteração do título da aba do navegador
+export const metadata = {
+  title: 'PRESENTEÍSMO | Integração & Treinamento Inicial',
+};
+
 function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
   const pathname = usePathname();
 
-  // Se estiver carregando ou na tela de login, não mostra o menu lateral
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white font-medium">
@@ -37,9 +41,9 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
       <aside className="w-64 bg-slate-900 text-slate-200 flex flex-col justify-between border-r border-slate-800 shadow-xl shrink-0">
         <div className="p-6">
           <div className="flex items-center gap-2 font-black text-lg tracking-wider text-white uppercase">
-            <span className="text-blue-500">⚡</span> CallCenter OS
+            <span className="text-emerald-500">⚡</span> PRESENTEÍSMO
           </div>
-          <p className="text-[10px] text-slate-500 mt-1 font-bold">RECRUTAMENTO & TREINAMENTO</p>
+          <p className="text-[10px] text-slate-500 mt-1 font-bold">INTEGRAÇÃO & TREINAMENTO INICIAL</p>
           
           <nav className="mt-8 space-y-1">
             {menuItems.map((item) => {
@@ -51,7 +55,7 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
                   href={item.href}
                   className={`flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${
                     isActive 
-                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' 
+                      ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20' 
                       : 'hover:bg-slate-800/60 text-slate-400 hover:text-slate-200'
                   }`}
                 >
@@ -90,7 +94,7 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR">
-      <body className="antialiased selection:bg-blue-500 selection:text-white">
+      <body className="antialiased selection:bg-emerald-500 selection:text-white">
         <AuthProvider>
           <AppLayoutContent>{children}</AppLayoutContent>
         </AuthProvider>
