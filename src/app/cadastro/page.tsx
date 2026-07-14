@@ -130,4 +130,133 @@ export default function CadastroTurmaPage() {
 
   if (success) {
     return (
-      <div className="max-w-xl mx-auto p-8 text-center bg-white rounded
+      <div className="max-w-xl mx-auto p-8 text-center bg-white rounded-xl shadow mt-10">
+        <h2 className="text-2xl font-bold text-emerald-600 mb-2">Turma Cadastrada com Sucesso!</h2>
+        <p className="text-slate-500 mb-6">A turma e os colaboradores foram salvos no banco de dados.</p>
+        <button onClick={() => window.location.reload()} className="px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors">
+          Cadastrar Nova Turma
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">Criação de Turmas</h1>
+        <p className="text-sm text-slate-500 mt-1">Preencha os dados da turma e importe os colaboradores copiando do Excel.</p>
+      </div>
+
+      {error && <div className="p-4 bg-rose-50 text-rose-700 border border-rose-200 rounded-lg font-medium">{error}</div>}
+      
+      <form onSubmit={handleSaveAll} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <div className="lg:col-span-1 bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+            
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Número da Turma *</label>
+              <input type="text" value={numeroTurma} onChange={(e) => setNumeroTurma(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" required />
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Responsável *</label>
+              <select value={responsavelMatricula} onChange={(e) => setResponsavelMatricula(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" required>
+                  <option value="">Selecione...</option>
+                  {equipe.map((m) => <option key={m.matricula} value={m.matricula}>{m.nome}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Operação *</label>
+              <select value={operacaoId} onChange={(e) => setOperacaoId(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" required>
+                  <option value="">Selecione...</option>
+                  {operacoes.map((o) => <option key={o.id} value={o.id}>{o.nome}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Data Início *</label>
+              <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" required />
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Horário de Início *</label>
+              <input type="time" value={horarioInicio} onChange={(e) => setHorarioInicio(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" required />
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Data 1º Alô</label>
+              <input type="date" value={dataAlo} onChange={(e) => setDataAlo(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" />
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Data Fim *</label>
+              <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" required />
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Sala</label>
+              <select value={sala} onChange={(e) => setSala(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                  <option value="">Selecione a sala...</option>
+                  {salas.map((s) => <option key={s.id} value={s.nome}>{s.nome}</option>)}
+              </select>
+            </div>
+        </div>
+
+        <div className="lg:col-span-2 space-y-4">
+          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+            <h2 className="font-bold text-slate-800 mb-2">Importar Operadores (Cole do Excel)</h2>
+            <textarea 
+              className="w-full h-32 border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none font-mono"
+              placeholder="Cole aqui os dados copiados do Excel (Matrícula, Nome, CPF, Data Admissão, Jornada, Grupo 30h)..."
+              value={excelPasteText}
+              onChange={(e) => {
+                setExcelPasteText(e.target.value);
+                handleParseExcel(e.target.value);
+              }}
+            />
+          </div>
+
+          {colaboradores.length > 0 && (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <table className="w-full text-sm text-left">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600">
+                        <tr>
+                            <th className="p-3 font-bold">Matrícula</th>
+                            <th className="p-3 font-bold">Nome</th>
+                            <th className="p-3 font-bold text-center w-20">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {colaboradores.map((c, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                <td className="p-3 font-medium text-slate-800">{c.matricula}</td>
+                                <td className="p-3 text-slate-600">{c.nome}</td>
+                                <td className="p-3 text-center w-20">
+                                  <button 
+                                    type="button" 
+                                    onClick={() => setColaboradores(colaboradores.filter((_, i) => i !== idx))}
+                                    className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-md transition-colors"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+          )}
+
+          <button 
+            type="submit" 
+            disabled={loading || colaboradores.length === 0} 
+            className="w-full bg-blue-600 text-white p-4 rounded-xl font-bold hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors shadow-sm"
+          >
+            {loading ? 'Salvando dados...' : 'Salvar Turma e Operadores'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
