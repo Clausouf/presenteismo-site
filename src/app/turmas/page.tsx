@@ -35,7 +35,11 @@ function TabelaTurma({ turma, colaboradores, presencas, obsInicial, onUpdate, on
   return (
     <div className="mb-10 border rounded-lg bg-white shadow-sm overflow-hidden">
       <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
-        <div className="font-bold text-slate-800 text-lg">Turma {turma.numero_turma}</div>
+        <div className="font-bold text-slate-800 text-lg">
+          Turma {turma.numero_turma}
+          {turma.sala && ` - ${turma.sala}`}
+          {turma.horario && ` - ${turma.horario.substring(0, 5)}`}
+        </div>
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold text-slate-500 uppercase">Status:</span>
           <select
@@ -71,7 +75,6 @@ function TabelaTurma({ turma, colaboradores, presencas, obsInicial, onUpdate, on
                     {c.nome}
                   </span>
                   
-                  {/* Tooltip com lógica corrigida: se true = "Sim", caso contrário = "-" */}
                   <div className="absolute left-0 top-full mt-2 w-64 bg-slate-800 text-white p-3 rounded-lg shadow-xl hidden group-hover:block z-50 text-[11px] pointer-events-none border border-slate-700">
                     <div className="space-y-1.5">
                       <p className="font-bold border-b border-slate-700 pb-1 mb-1 text-blue-400">{c.nome}</p>
@@ -181,18 +184,16 @@ export default function DiarioPresencaPage() {
   };
 
   const handleStatusChange = async (turmaNum: string, novoStatus: string) => {
-    // Tenta atualizar no Supabase
     const { error } = await supabase
       .from('turmas')
       .update({ status: novoStatus })
-      .eq('numero_turma', turmaNum); // Verifica se o nome da coluna é este mesmo
+      .eq('numero_turma', turmaNum);
 
     if (error) { 
       alert("Erro ao salvar no banco: " + error.message); 
       return; 
     }
     
-    // Atualiza localmente
     setTurmas(prev => prev.map(t => t.numero_turma === turmaNum ? { ...t, status: novoStatus } : t));
   };
 
