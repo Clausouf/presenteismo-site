@@ -98,5 +98,36 @@ export default function CadastroTurmaPage() {
           data_alo: dataAlo || null,
           data_fim: dataFim || null,
           sala: sala || null,
-          horario: horarioInicio || null, // Corrigido para "horario" conforme seu banco
+          horario: horarioInicio || null,
           status: 'Em Andamento'
+        });
+
+      if (errorTurma) throw errorTurma;
+
+      const loteInclusao = colaboradores.map((c) => ({
+        turma_numero: numeroTurma.trim(),
+        matricula: c.matricula.trim(),
+        nome: c.nome.trim(),
+        cpf: c.cpf.replace(/\D/g, ''),
+        data_admissao: formatarDataParaBanco(c.data_admissao),
+        jornada: c.jornada,
+        grupo_30_horas: c.grupo_30_horas,
+        status: 'Ativo'
+      }));
+
+      const { error: errorColaboradores } = await supabase.from('colaboradores').insert(loteInclusao);
+      if (errorColaboradores) throw errorColaboradores;
+
+      setSuccess(true);
+    } catch (err: any) {
+      setError(`Erro ao salvar: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loadingData) return <div className="p-10 text-center">Carregando dados necessários...</div>;
+
+  if (success) {
+    return (
+      <div className="max-w-xl mx-auto p-8 text-center bg-white rounded
