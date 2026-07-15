@@ -230,4 +230,89 @@ export default function DiarioPresencaPage() {
     setDadosDasTurmas(prev => {
         const newData = { ...prev };
         if (status === '') delete newData[turmaNum].presencas[`${matricula}_${dataStr}`];
-        else newData[turmaNum].pres
+        else newData[turmaNum].presencas[`${matricula}_${dataStr}`] = { ...newData[turmaNum].presencas[`${matricula}_${dataStr}`], tipo_registro: status };
+        return { ...newData };
+    });
+  };
+
+  const handleStatusChange = async (turmaNum: string, novoStatus: string) => {
+    const { error } = await supabase
+      .from('turmas')
+      .update({ status: novoStatus })
+      .eq('numero_turma', turmaNum);
+
+    if (error) { 
+      alert("Erro ao salvar no banco: " + error.message); 
+      return; 
+    }
+    setTurmas(prev => prev.map(t => t.numero_turma === turmaNum ? { ...t, status: novoStatus } : t));
+  };
+
+  const handleDeleteTurma = async (turmaNum: string) => {
+    if (!confirm(`TEM CERTEZA? Isso excluirá permanentemente a Turma ${turmaNum} e todos os seus dados vinculados.`)) return;
+    
+    // Fix: A tabela 'diario_presenca' usa a coluna 'turma_numero', as outras parecem usar 'numero_turma'
+    try {
+        const { error: err1 } = await supabase.from('diario_presenca').delete().eq('turma_numero', turmaNum);
+        const { error: err2 } = await supabase.from('colaboradores').delete().eq('numero_turma', turmaNum);
+        const { error: err3 } = await supabase.from('turma_observacoes').delete().eq('numero_turma', turmaNum);
+        const { error: err4 } = await supabase.from('turmas').delete().eq('numero_turma', turmaNum);
+        
+        if (err1 || err2 || err3 || err4) throw new Error("Erro ao deletar registros vinculados.");
+        
+        setTurmas(prev => prev.filter(t => t.numero_turma !== turmaNum));
+        alert('Turma excluída com sucesso.');
+    } catch (err: any) {
+        alert(err.message);
+    }
+  };
+
+  const turmasFiltradas = selectedOperacaoId === 'todos' ? [] : turmas.filter(t => t.operacao_id === Number(selectedOperacaoId));
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="grid grid-cols-2 gap-4 bg-white p-4 rounded-lg shadow">
+        <div>
+          <label className="block text-xs font-bold text-slate-500">OPERAÇÃO</label>
+          <select className="w-full border p-2 rounded" onChange={(e) => { setSelectedOperacaoId(e.target.value); setSelectedTurmaNum(''); }}>
+            <option value="todos">Selecione uma Operação...</option>
+            {operacoes.map(op => <option key={op.id} value={op.id}>{op.nome}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-slate-500">TURMA</label>
+          <select className="w-full border p-2 rounded" value={selectedTurmaNum} onChange={(e) => setSelectedTurmaNum(e.target.value)}>
+            <option value="">Todas as Turmas</option>
+            {turmasFiltradas.map(t => <option key={t.numero_turma} value={t.numero_turma}>Turma {t.numero_turma}</option>)}
+          </select>
+        </div>
+      </div>
+      {selectedOperacaoId !== 'todos' && Object.keys(dadosDasTurmas).map(numTurma => {
+        const turmaObj = turmas.find(t => t.numero_turma === numTurma);
+        const resp = equipe.find(m => m.matricula === turmaObj?.responsavel_matricula);
+        if (!turmaObj || !dadosDasTurmas[numTurma]) return null;
+        return (
+          <TabelaTurma 
+            key={numTurma} 
+            turma={turmaObj} 
+            responsavelNome={resp?.nome || ''}
+            colaboradores={dadosDasTurmas[numTurma].colabs} 
+            presencas={dadosDasTurmas[numTurma].presencas} 
+            obsInicial={dadosDasTurmas[numTurma].obs} 
+            onUpdate={handleUpdatePresence} 
+            onStatusChange={handleStatusChange}
+            onDeleteTurma={handleDeleteTurma}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function gerarArrayDatas(inicio: string, fim: string) {
+  const arr = [];
+  let d = new Date(inicio + 'T00:00:00');
+  const f = new Date(fim + 'T00:00:00');
+  while (d <= f) { arr.push(d.toISOString().split('T')[0]); d.setDate(d.getDate() + 1); }
+  return arr;
+}
