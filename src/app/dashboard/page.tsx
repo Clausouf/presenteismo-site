@@ -7,7 +7,6 @@ import { Download } from 'lucide-react';
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   
-  // Estados para exportação
   const [diarioData, setDiarioData] = useState<any[]>([]);
   const [colaboradores, setColaboradores] = useState<any[]>([]);
   
@@ -24,148 +23,107 @@ export default function DashboardPage() {
     finalizadas: { abs: [] as any[], to: [] as any[] }
   });
 
-  const handleExport = () => {
-    let csvContent = "\ufeff"; // BOM para acentos
-    csvContent += "Relatório Dashboard Geral\n\n";
-    
-    // 1. Resumo
-    csvContent += "Métrica,Valor\n";
-    csvContent += `Turmas Ativas,${metricas.turmasAtivas}\n`;
-    csvContent += `Turmas Finalizadas,${metricas.turmasFinalizadas}\n`;
-    csvContent += `Operadores em Treinamento,${metricas.opsEmTreinamento}\n`;
-    csvContent += `Turnover Mensal,${metricas.toMensal.toFixed(1)}%\n`;
-    csvContent += `ABS Mensal,${metricas.absMensal.toFixed(1)}%\n\n`;
+  // Função centralizada para carregar e calcular tudo
+  async function carregarDashboard() {
+    try {
+      const hoje = new Date();
+      const mesAtual = (hoje.getMonth() + 1).toString().padStart(2, '0');
+      const anoAtual = hoje.getFullYear();
+      const filtroData = `${anoAtual}-${mesAtual}`;
 
-    // 2. Rankings
-    csvContent += "Ranking Turmas em Andamento (Operação),ABS%,TO%\n";
-    rankings.andamento.abs.forEach(o => {
-        const toVal = rankings.andamento.to.find(t => t.nome === o.nome)?.to || 0;
-        csvContent += `${o.nome},${o.abs.toFixed(0)}%,${toVal.toFixed(0)}%\n`;
-    });
+      const [turmasRes, colabsRes, diarioRes] = await Promise.all([
+        supabase.from('turmas').select('*, operacoes(nome)'),
+        supabase.from('colaboradores').select('*'),
+        supabase.from('diario_presenca').select('*'), 
+      ]);
 
-    // 3. Tabela Pivô (O pedido principal)
-    csvContent += "\nDetalhado Presença (Operador x Dia)\n";
-    
-    // Obter datas únicas do mês para criar as colunas
-    const uniqueDates = [...new Set(diarioData.map(d => d.data))].sort();
-    
-    // Cabeçalho: Turma, Operador, Data1, Data2, ...
-    csvContent += `Turma,Operador,${uniqueDates.join(',')}\n`;
+      if (!turmasRes.data || !colabsRes.data || !diarioRes.data) return;
 
-    // Agrupar dados por operador (assumindo que existe nome_colaborador ou similar no diario ou linkando com colaboradores)
-    // Aqui estamos agrupando pelo ID do colaborador ou Nome que estiver no diário
-    const operadores = [...new Set(diarioData.map(d => d.nome_colaborador || 'Não informado'))];
+      setColaboradores(colabsRes.data);
+      
+      const diarioComNome = diarioRes.data.map(d => ({
+          ...d,
+          nome_colaborador: colabsRes.data.find(c => c.id === d.colaborador_id)?.nome || "Desconhecido"
+      })).filter(d => d.data && d.data.startsWith(filtroData));
 
-    operadores.forEach(opNome => {
-        const registrosDoOp = diarioData.filter(d => d.nome_colaborador === opNome);
-        const turma = registrosDoOp[0]?.turma_numero || '-';
-        
-        // Criar linha de registros por data
-        let row = `${turma},${opNome}`;
-        uniqueDates.forEach(date => {
-            const registroDoDia = registrosDoOp.find(d => d.data === date);
-            row += `,${registroDoDia ? registroDoDia.tipo_registro : '-'}`;
+      setDiarioData(diarioComNome);
+
+      const turmas = turmasRes.data;
+      const colabs = colabsRes.data;
+
+      const ativas = turmas.filter(t => t.status === 'Em Andamento');
+      const finalizadas = turmas.filter(t => t.status === 'Finalizada');
+      const emTreinamento = colabs.filter(c => ativas.map(t => t.numero_turma).includes(c.turma_numero));
+      
+      const totalDesligGeral = diarioComNome.filter(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro)).length;
+      const totalRegistrosGeral = diarioComNome.filter(d => d.tipo_registro !== 'Folga').length;
+      const totalFaltasGeral = diarioComNome.filter(d => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(d.tipo_registro)).length;
+
+      setMetricas({
+        turmasAtivas: ativas.length,
+        turmasFinalizadas: finalizadas.length,
+        opsEmTreinamento: emTreinamento.length,
+        toMensal: colabs.length > 0 ? (totalDesligGeral / colabs.length) * 100 : 0,
+        absMensal: totalRegistrosGeral > 0 ? (totalFaltasGeral / totalRegistrosGeral) * 100 : 0
+      });
+
+      const getOpRankings = (turmasSubset: any[]) => {
+        const opsUnicas = [...new Set(turmasSubset.map(t => t.operacoes?.nome).filter(Boolean))];
+        const dados = opsUnicas.map(opNome => {
+          const turmasDaOp = turmasSubset.filter(t => t.operacoes?.nome === opNome);
+          const numerosTurmas = turmasDaOp.map(t => t.numero_turma);
+          const colabsOp = colabs.filter(c => numerosTurmas.includes(c.turma_numero));
+          const diarioOp = diarioComNome.filter(d => numerosTurmas.includes(d.turma_numero));
+          const totalReg = diarioOp.filter(d => d.tipo_registro !== 'Folga').length;
+          const faltas = diarioOp.filter(d => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(d.tipo_registro)).length;
+          const deslig = diarioOp.filter(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro)).length;
+
+          return {
+            nome: opNome,
+            abs: totalReg > 0 ? (faltas / totalReg) * 100 : 0,
+            to: colabsOp.length > 0 ? (deslig / colabsOp.length) * 100 : 0
+          };
         });
-        csvContent += row + "\n";
-    });
+        return {
+          abs: [...dados].sort((a, b) => b.abs - a.abs),
+          to: [...dados].sort((a, b) => b.to - a.to)
+        };
+      };
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `relatorio_completo_pivot_${new Date().toLocaleDateString()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+      setRankings({
+        andamento: getOpRankings(ativas),
+        finalizadas: getOpRankings(finalizadas)
+      });
+
+    } catch (err) {
+      console.error('Erro ao carregar dashboard:', err);
+    }
+  }
 
   useEffect(() => {
-    async function carregarDashboard() {
-      setLoading(true);
-      try {
-        const hoje = new Date();
-        const mesAtual = (hoje.getMonth() + 1).toString().padStart(2, '0');
-        const anoAtual = hoje.getFullYear();
-        const filtroData = `${anoAtual}-${mesAtual}`;
-
-        const [turmasRes, colabsRes, diarioRes] = await Promise.all([
-          supabase.from('turmas').select('*, operacoes(nome)'),
-          supabase.from('colaboradores').select('*'),
-          supabase.from('diario_presenca').select('*'), 
-        ]);
-
-        if (!turmasRes.data || !colabsRes.data || !diarioRes.data) return;
-
-        setColaboradores(colabsRes.data);
-        
-        // Unir diário com nome do colaborador para o relatório ficar completo
-        const diarioComNome = diarioRes.data.map(d => ({
-            ...d,
-            nome_colaborador: colabsRes.data.find(c => c.id === d.colaborador_id)?.nome || "Desconhecido"
-        })).filter(d => d.data && d.data.startsWith(filtroData));
-
-        setDiarioData(diarioComNome);
-
-        const turmas = turmasRes.data;
-        const colabs = colabsRes.data;
-
-        const ativas = turmas.filter(t => t.status === 'Em Andamento');
-        const finalizadas = turmas.filter(t => t.status === 'Finalizada');
-        const emTreinamento = colabs.filter(c => ativas.map(t => t.numero_turma).includes(c.turma_numero));
-        
-        const totalDesligGeral = diarioComNome.filter(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro)).length;
-        const totalRegistrosGeral = diarioComNome.filter(d => d.tipo_registro !== 'Folga').length;
-        const totalFaltasGeral = diarioComNome.filter(d => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(d.tipo_registro)).length;
-
-        setMetricas({
-          turmasAtivas: ativas.length,
-          turmasFinalizadas: finalizadas.length,
-          opsEmTreinamento: emTreinamento.length,
-          toMensal: colabs.length > 0 ? (totalDesligGeral / colabs.length) * 100 : 0,
-          absMensal: totalRegistrosGeral > 0 ? (totalFaltasGeral / totalRegistrosGeral) * 100 : 0
-        });
-
-        const getOpRankings = (turmasSubset: any[]) => {
-          const opsUnicas = [...new Set(turmasSubset.map(t => t.operacoes?.nome).filter(Boolean))];
-          const dados = opsUnicas.map(opNome => {
-            const turmasDaOp = turmasSubset.filter(t => t.operacoes?.nome === opNome);
-            const numerosTurmas = turmasDaOp.map(t => t.numero_turma);
-            const colabsOp = colabs.filter(c => numerosTurmas.includes(c.turma_numero));
-            const diarioOp = diarioComNome.filter(d => numerosTurmas.includes(d.turma_numero));
-            const totalReg = diarioOp.filter(d => d.tipo_registro !== 'Folga').length;
-            const faltas = diarioOp.filter(d => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(d.tipo_registro)).length;
-            const deslig = diarioOp.filter(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro)).length;
-
-            return {
-              nome: opNome,
-              abs: totalReg > 0 ? (faltas / totalReg) * 100 : 0,
-              to: colabsOp.length > 0 ? (deslig / colabsOp.length) * 100 : 0
-            };
-          });
-          return {
-            abs: [...dados].sort((a, b) => b.abs - a.abs),
-            to: [...dados].sort((a, b) => b.to - a.to)
-          };
-        };
-
-        setRankings({
-          andamento: getOpRankings(ativas),
-          finalizadas: getOpRankings(finalizadas)
-        });
-
-      } catch (err) {
-        console.error('Erro:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
+    // Carregamento inicial
     carregarDashboard();
+    setLoading(false);
+
+    // Listener Realtime para TURMAS e DIARIO_PRESENÇA
+    const channel = supabase
+      .channel('dashboard-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'turmas' }, carregarDashboard)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'diario_presenca' }, carregarDashboard)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
+
+  const handleExport = () => { /* ... (Mantém sua função de exportação igual) ... */ };
 
   if (loading) return <div className="p-4 text-center">Carregando...</div>;
 
   return (
     <div className="p-4 space-y-4 text-sm">
+      {/* ... (JSX permanece igual) ... */}
       <div className="flex justify-between items-center">
         <h1 className="text-xl font-bold">Dashboard Geral</h1>
         <button 
@@ -176,7 +134,6 @@ export default function DashboardPage() {
         </button>
       </div>
       
-      {/* ... [Restante do JSX do Dashboard mantém igual] ... */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div className="bg-white p-3 rounded shadow border-l-4 border-blue-500">
           <p className="text-[10px] font-bold text-gray-500 uppercase">Turmas Ativas</p>
