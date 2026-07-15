@@ -183,7 +183,7 @@ export default function DiarioPresencaPage() {
     for (const t of turmasDaOp) {
       const [colabs, regs, obs] = await Promise.all([
         supabase.from('colaboradores').select('*').eq('numero_turma', t.numero_turma),
-        supabase.from('diario_presenca').select('*').eq('turma_numero', t.numero_turma),
+        supabase.from('diario_presenca').select('*').eq('numero_turma', t.numero_turma),
         supabase.from('turma_observacoes').select('*').eq('numero_turma', t.numero_turma).order('created_at', { ascending: false })
       ]);
       const mapaPresencas: any = {};
@@ -217,10 +217,10 @@ export default function DiarioPresencaPage() {
 
   const handleUpdatePresence = async (turmaNum: string, matricula: string, nome: string, dataStr: string, status: string) => {
     if (status === '') {
-        const { error } = await supabase.from('diario_presenca').delete().eq('turma_numero', turmaNum).eq('matricula', matricula).eq('data', dataStr);
+        const { error } = await supabase.from('diario_presenca').delete().eq('numero_turma', turmaNum).eq('matricula', matricula).eq('data', dataStr);
         if (error) { alert('Erro ao deletar: ' + error.message); return; }
     } else {
-        const { error } = await supabase.from('diario_presenca').upsert({ turma_numero: turmaNum, matricula, colaborador_nome: nome, data: dataStr, tipo_registro: status });
+        const { error } = await supabase.from('diario_presenca').upsert({ numero_turma: turmaNum, matricula, colaborador_nome: nome, data: dataStr, tipo_registro: status });
         if (error) { alert('Erro ao salvar: ' + error.message); return; }
     }
     
@@ -250,7 +250,7 @@ export default function DiarioPresencaPage() {
     
     try {
         // Deleta os registros de presença
-        const { error: err1 } = await supabase.from('diario_presenca').delete().eq('turma_numero', turmaNum);
+        const { error: err1 } = await supabase.from('diario_presenca').delete().eq('numero_turma', turmaNum);
         if (err1) throw new Error(`Erro na tabela diario_presenca: ${err1.message}`);
 
         // Deleta os colaboradores
