@@ -11,7 +11,6 @@ const STATUS_OPTIONS = [
   { value: 'Finalizada', label: 'Finalizada' }
 ];
 
-// Componente auxiliar para evitar erro de Hidratação com datas
 function FormattedDate({ dateString }: { dateString: string }) {
   const [date, setDate] = useState<string>('');
   useEffect(() => {
@@ -38,13 +37,15 @@ function TabelaTurma({ turma, colaboradores, presencas, obsInicial, onUpdate, on
 
   const handleSalvarObs = async () => {
     if (!novaObs.trim()) return;
-    const { data } = await supabase.from('turma_observacoes').insert({ turma_numero: turma.numero_turma, texto: novaObs }).select().single();
+    const { data, error } = await supabase.from('turma_observacoes').insert({ turma_numero: turma.numero_turma, texto: novaObs }).select().single();
+    if (error) { alert('Erro ao salvar observação: ' + error.message); return; }
     if (data) { setObservacoes([data, ...observacoes]); setNovaObs(''); }
   };
 
   const handleDeleteObs = async (id: number) => {
     if (!confirm('Deseja excluir esta observação?')) return;
-    await supabase.from('turma_observacoes').delete().eq('id', id);
+    const { error } = await supabase.from('turma_observacoes').delete().eq('id', id);
+    if (error) { alert('Erro ao excluir observação: ' + error.message); return; }
     setObservacoes(observacoes.filter((o: any) => o.id !== id));
   };
 
@@ -172,6 +173,23 @@ export default function DiarioPresencaPage() {
   const [selectedTurmaNum, setSelectedTurmaNum] = useState<string>('');
   const [dadosDasTurmas, setDadosDasTurmas] = useState<Record<string, any>>({});
 
+  async function carregarDados() {
+    if (selectedOperacaoId === 'todos') { setDadosDasTurmas({}); return; }
+    const turmasDaOp = selectedTurmaNum ? turmas.filter(t => t.numero_turma === selectedTurmaNum) : turmas.filter(t => t.operacao_id === Number(selectedOperacaoId));
+    const novosDados: any = {};
+    for (const t of turmasDaOp) {
+      const [colabs, regs, obs] = await Promise.all([
+        supabase.from('colaboradores').select('*').eq('turma_numero', t.numero_turma),
+        supabase.from('diario_presenca').select('*').eq('turma_numero', t.numero_turma),
+        supabase.from('turma_observacoes').select('*').eq('turma_numero', t.numero_turma).order('created_at', { ascending: false })
+      ]);
+      const mapaPresencas: any = {};
+      regs.data?.forEach(r => mapaPresencas[`${r.matricula}_${r.data}`] = r);
+      novosDados[t.numero_turma] = { colabs: colabs.data || [], presencas: mapaPresencas, obs: obs.data || [] };
+    }
+    setDadosDasTurmas(novosDados);
+  }
+
   useEffect(() => {
     async function init() {
       const { data: o } = await supabase.from('operacoes').select('*');
@@ -180,31 +198,29 @@ export default function DiarioPresencaPage() {
       if (t) setTurmas(t);
     }
     init();
+
+    // Realtime para atualizar a lista de turmas se algo mudar
+    const channel = supabase.channel('turmas-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'turmas' }, () => init())
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   useEffect(() => {
-    async function carregarDados() {
-      if (selectedOperacaoId === 'todos') { setDadosDasTurmas({}); return; }
-      const turmasDaOp = selectedTurmaNum ? turmas.filter(t => t.numero_turma === selectedTurmaNum) : turmas.filter(t => t.operacao_id === Number(selectedOperacaoId));
-      const novosDados: any = {};
-      for (const t of turmasDaOp) {
-        const [colabs, regs, obs] = await Promise.all([
-          supabase.from('colaboradores').select('*').eq('turma_numero', t.numero_turma),
-          supabase.from('diario_presenca').select('*').eq('turma_numero', t.numero_turma),
-          supabase.from('turma_observacoes').select('*').eq('turma_numero', t.numero_turma).order('created_at', { ascending: false })
-        ]);
-        const mapaPresencas: any = {};
-        regs.data?.forEach(r => mapaPresencas[`${r.matricula}_${r.data}`] = r);
-        novosDados[t.numero_turma] = { colabs: colabs.data || [], presencas: mapaPresencas, obs: obs.data || [] };
-      }
-      setDadosDasTurmas(novosDados);
-    }
     carregarDados();
   }, [selectedOperacaoId, selectedTurmaNum, turmas]);
 
   const handleUpdatePresence = async (turmaNum: string, matricula: string, nome: string, dataStr: string, status: string) => {
-    if (status === '') await supabase.from('diario_presenca').delete().eq('turma_numero', turmaNum).eq('matricula', matricula).eq('data', dataStr);
-    else await supabase.from('diario_presenca').upsert({ turma_numero: turmaNum, matricula, colaborador_nome: nome, data: dataStr, tipo_registro: status });
+    if (status === '') {
+        const { error } = await supabase.from('diario_presenca').delete().eq('turma_numero', turmaNum).eq('matricula', matricula).eq('data', dataStr);
+        if (error) { alert('Erro ao deletar: ' + error.message); return; }
+    } else {
+        const { error } = await supabase.from('diario_presenca').upsert({ turma_numero: turmaNum, matricula, colaborador_nome: nome, data: dataStr, tipo_registro: status });
+        if (error) { alert('Erro ao salvar: ' + error.message); return; }
+    }
+    
+    // Atualiza localmente após sucesso no DB
     setDadosDasTurmas(prev => {
         const newData = { ...prev };
         if (status === '') delete newData[turmaNum].presencas[`${matricula}_${dataStr}`];
@@ -227,18 +243,21 @@ export default function DiarioPresencaPage() {
   };
 
   const handleDeleteTurma = async (turmaNum: string) => {
-    if (!confirm(`TEM CERTEZA? Isso excluirá permanentemente a Turma ${turmaNum} e todos os seus dados vinculados (presenças, observações e lista de operadores).`)) return;
+    if (!confirm(`TEM CERTEZA? Isso excluirá permanentemente a Turma ${turmaNum} e todos os seus dados vinculados.`)) return;
+    
+    // Lista de tabelas para deletar
+    const tables = ['diario_presenca', 'colaboradores', 'turma_observacoes', 'turmas'];
     
     try {
-        await supabase.from('diario_presenca').delete().eq('turma_numero', turmaNum);
-        await supabase.from('colaboradores').delete().eq('turma_numero', turmaNum);
-        await supabase.from('turma_observacoes').delete().eq('turma_numero', turmaNum);
-        await supabase.from('turmas').delete().eq('numero_turma', turmaNum);
+        for (const table of tables) {
+            const { error } = await supabase.from(table).delete().eq('numero_turma', turmaNum);
+            if (error) throw new Error(`Erro ao deletar de ${table}: ${error.message}`);
+        }
         
         setTurmas(prev => prev.filter(t => t.numero_turma !== turmaNum));
         alert('Turma excluída com sucesso.');
     } catch (err: any) {
-        alert('Erro ao excluir: ' + err.message);
+        alert(err.message);
     }
   };
 
