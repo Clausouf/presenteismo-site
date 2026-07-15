@@ -20,7 +20,6 @@ export default function CadastroTurmaPage() {
   const [operacoes, setOperacoes] = useState<any[]>([]);
   const [salas, setSalas] = useState<any[]>([]);
 
-  // Estados do formulário da Turma
   const [numeroTurma, setNumeroTurma] = useState('');
   const [operacaoId, setOperacaoId] = useState(''); 
   const [responsavelMatricula, setResponsavelMatricula] = useState('');
@@ -105,7 +104,7 @@ export default function CadastroTurmaPage() {
       if (errorTurma) throw errorTurma;
 
       const loteInclusao = colaboradores.map((c) => ({
-        turma_numero: numeroTurma.trim(),
+        numero_turma: numeroTurma.trim(), // CORRIGIDO PARA numero_turma
         matricula: c.matricula.trim(),
         nome: c.nome.trim(),
         cpf: c.cpf.replace(/\D/g, ''),
