@@ -52,12 +52,14 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
   return (
     <div className="mb-10 border rounded-lg bg-white shadow-sm overflow-hidden">
       <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
+        {/* CABEÇALHO ATUALIZADO CONFORME SOLICITADO */}
         <div className="font-bold text-slate-800 text-lg">
           Turma {turma.numero_turma}
-          {responsavelNome && ` - ${responsavelNome}`}
+          {` - ${responsavelNome || 'Sem responsável'}`}
           {turma.sala && ` - ${turma.sala}`}
           {turma.horario && ` - ${turma.horario.substring(0, 5)}`}
         </div>
+        
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-slate-500 uppercase">Status:</span>
@@ -168,7 +170,7 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
 
 // --- PÁGINA PRINCIPAL ---
 export default function DiarioPresencaPage() {
-  const [equipe, setEquipe] = useState<any[]>([]); // Adicionado para buscar nome do responsável
+  const [equipe, setEquipe] = useState<any[]>([]);
   const [operacoes, setOperacoes] = useState<any[]>([]);
   const [turmas, setTurmas] = useState<any[]>([]);
   const [selectedOperacaoId, setSelectedOperacaoId] = useState<string>('todos');
@@ -182,7 +184,7 @@ export default function DiarioPresencaPage() {
     for (const t of turmasDaOp) {
       const [colabs, regs, obs] = await Promise.all([
         supabase.from('colaboradores').select('*').eq('numero_turma', t.numero_turma),
-        supabase.from('diario_presenca').select('*').eq('numero_turma', t.numero_turma),
+        supabase.from('diario_presenca').select('*').eq('turma_numero', t.numero_turma), // Fix: usando turma_numero
         supabase.from('turma_observacoes').select('*').eq('numero_turma', t.numero_turma).order('created_at', { ascending: false })
       ]);
       const mapaPresencas: any = {};
@@ -196,7 +198,7 @@ export default function DiarioPresencaPage() {
     async function init() {
       const { data: o } = await supabase.from('operacoes').select('*');
       const { data: t } = await supabase.from('turmas').select('*');
-      const { data: e } = await supabase.from('equipe').select('*'); // Carrega equipe para nomes
+      const { data: e } = await supabase.from('equipe').select('*');
       if (o) setOperacoes(o);
       if (t) setTurmas(t);
       if (e) setEquipe(e);
@@ -216,98 +218,16 @@ export default function DiarioPresencaPage() {
 
   const handleUpdatePresence = async (turmaNum: string, matricula: string, nome: string, dataStr: string, status: string) => {
     if (status === '') {
-        const { error } = await supabase.from('diario_presenca').delete().eq('numero_turma', turmaNum).eq('matricula', matricula).eq('data', dataStr);
+        // Fix: usamos 'turma_numero' na tabela diario_presenca para evitar erro
+        const { error } = await supabase.from('diario_presenca').delete().eq('turma_numero', turmaNum).eq('matricula', matricula).eq('data', dataStr);
         if (error) { alert('Erro ao deletar: ' + error.message); return; }
     } else {
-        const { error } = await supabase.from('diario_presenca').upsert({ numero_turma: turmaNum, matricula, colaborador_nome: nome, data: dataStr, tipo_registro: status });
+        // Fix: usamos 'turma_numero' na tabela diario_presenca
+        const { error } = await supabase.from('diario_presenca').upsert({ turma_numero: turmaNum, matricula, colaborador_nome: nome, data: dataStr, tipo_registro: status });
         if (error) { alert('Erro ao salvar: ' + error.message); return; }
     }
     
     setDadosDasTurmas(prev => {
         const newData = { ...prev };
         if (status === '') delete newData[turmaNum].presencas[`${matricula}_${dataStr}`];
-        else newData[turmaNum].presencas[`${matricula}_${dataStr}`] = { ...newData[turmaNum].presencas[`${matricula}_${dataStr}`], tipo_registro: status };
-        return { ...newData };
-    });
-  };
-
-  const handleStatusChange = async (turmaNum: string, novoStatus: string) => {
-    const { error } = await supabase
-      .from('turmas')
-      .update({ status: novoStatus })
-      .eq('numero_turma', turmaNum);
-
-    if (error) { 
-      alert("Erro ao salvar no banco: " + error.message); 
-      return; 
-    }
-    setTurmas(prev => prev.map(t => t.numero_turma === turmaNum ? { ...t, status: novoStatus } : t));
-  };
-
-  const handleDeleteTurma = async (turmaNum: string) => {
-    if (!confirm(`TEM CERTEZA? Isso excluirá permanentemente a Turma ${turmaNum} e todos os seus dados vinculados.`)) return;
-    
-    const tables = ['diario_presenca', 'colaboradores', 'turma_observacoes', 'turmas'];
-    
-    try {
-        for (const table of tables) {
-            const { error } = await supabase.from(table).delete().eq('numero_turma', turmaNum);
-            if (error) throw new Error(`Erro ao deletar de ${table}: ${error.message}`);
-        }
-        
-        setTurmas(prev => prev.filter(t => t.numero_turma !== turmaNum));
-        alert('Turma excluída com sucesso.');
-    } catch (err: any) {
-        alert(err.message);
-    }
-  };
-
-  const turmasFiltradas = selectedOperacaoId === 'todos' ? [] : turmas.filter(t => t.operacao_id === Number(selectedOperacaoId));
-
-  return (
-    <div className="p-6 space-y-6">
-      <div className="grid grid-cols-2 gap-4 bg-white p-4 rounded-lg shadow">
-        <div>
-          <label className="block text-xs font-bold text-slate-500">OPERAÇÃO</label>
-          <select className="w-full border p-2 rounded" onChange={(e) => { setSelectedOperacaoId(e.target.value); setSelectedTurmaNum(''); }}>
-            <option value="todos">Selecione uma Operação...</option>
-            {operacoes.map(op => <option key={op.id} value={op.id}>{op.nome}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs font-bold text-slate-500">TURMA</label>
-          <select className="w-full border p-2 rounded" value={selectedTurmaNum} onChange={(e) => setSelectedTurmaNum(e.target.value)}>
-            <option value="">Todas as Turmas</option>
-            {turmasFiltradas.map(t => <option key={t.numero_turma} value={t.numero_turma}>Turma {t.numero_turma}</option>)}
-          </select>
-        </div>
-      </div>
-      {selectedOperacaoId !== 'todos' && Object.keys(dadosDasTurmas).map(numTurma => {
-        const turmaObj = turmas.find(t => t.numero_turma === numTurma);
-        const resp = equipe.find(m => m.matricula === turmaObj?.responsavel_matricula);
-        if (!turmaObj || !dadosDasTurmas[numTurma]) return null;
-        return (
-          <TabelaTurma 
-            key={numTurma} 
-            turma={turmaObj} 
-            responsavelNome={resp?.nome || ''}
-            colaboradores={dadosDasTurmas[numTurma].colabs} 
-            presencas={dadosDasTurmas[numTurma].presencas} 
-            obsInicial={dadosDasTurmas[numTurma].obs} 
-            onUpdate={handleUpdatePresence} 
-            onStatusChange={handleStatusChange}
-            onDeleteTurma={handleDeleteTurma}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-function gerarArrayDatas(inicio: string, fim: string) {
-  const arr = [];
-  let d = new Date(inicio + 'T00:00:00');
-  const f = new Date(fim + 'T00:00:00');
-  while (d <= f) { arr.push(d.toISOString().split('T')[0]); d.setDate(d.getDate() + 1); }
-  return arr;
-}
+        else newData[turmaNum].pres
