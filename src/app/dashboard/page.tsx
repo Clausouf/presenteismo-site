@@ -23,7 +23,6 @@ export default function DashboardPage() {
     finalizadas: { abs: [] as any[], to: [] as any[] }
   });
 
-  // Função centralizada para carregar e calcular tudo
   async function carregarDashboard() {
     try {
       const hoje = new Date();
@@ -31,29 +30,42 @@ export default function DashboardPage() {
       const anoAtual = hoje.getFullYear();
       const filtroData = `${anoAtual}-${mesAtual}`;
 
+      // Buscando dados de turmas, colaboradores e diário
       const [turmasRes, colabsRes, diarioRes] = await Promise.all([
         supabase.from('turmas').select('*, operacoes(nome)'),
         supabase.from('colaboradores').select('*'),
         supabase.from('diario_presenca').select('*'), 
       ]);
 
-      if (!turmasRes.data || !colabsRes.data || !diarioRes.data) return;
+      if (turmasRes.error || colabsRes.error || diarioRes.error) {
+        console.error("Erro ao buscar dados:", turmasRes.error || colabsRes.error || diarioRes.error);
+        return;
+      }
 
-      setColaboradores(colabsRes.data);
+      const turmas = turmasRes.data || [];
+      const colabs = colabsRes.data || [];
+      const diario = diarioRes.data || [];
+
+      setColaboradores(colabs);
       
-      const diarioComNome = diarioRes.data.map(d => ({
+      // Filtra diário pelo mês atual e une com o nome do colaborador
+      const diarioComNome = diario
+        .map(d => ({
           ...d,
-          nome_colaborador: colabsRes.data.find(c => c.id === d.colaborador_id)?.nome || "Desconhecido"
-      })).filter(d => d.data && d.data.startsWith(filtroData));
+          nome_colaborador: colabs.find(c => c.id === d.colaborador_id)?.nome || "Desconhecido"
+        }))
+        .filter(d => d.data && d.data.startsWith(filtroData));
 
       setDiarioData(diarioComNome);
 
-      const turmas = turmasRes.data;
-      const colabs = colabsRes.data;
-
+      // Lógica de métricas usando numero_turma
       const ativas = turmas.filter(t => t.status === 'Em Andamento');
       const finalizadas = turmas.filter(t => t.status === 'Finalizada');
-      const emTreinamento = colabs.filter(c => ativas.map(t => t.numero_turma).includes(c.turma_numero));
+      
+      // Ops em treinamento baseada na turma_numero do colaborador
+      const emTreinamento = colabs.filter(c => 
+        ativas.some(t => t.numero_turma === c.turma_numero)
+      );
       
       const totalDesligGeral = diarioComNome.filter(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro)).length;
       const totalRegistrosGeral = diarioComNome.filter(d => d.tipo_registro !== 'Folga').length;
@@ -67,13 +79,16 @@ export default function DashboardPage() {
         absMensal: totalRegistrosGeral > 0 ? (totalFaltasGeral / totalRegistrosGeral) * 100 : 0
       });
 
+      // Cálculo de Rankings
       const getOpRankings = (turmasSubset: any[]) => {
         const opsUnicas = [...new Set(turmasSubset.map(t => t.operacoes?.nome).filter(Boolean))];
         const dados = opsUnicas.map(opNome => {
           const turmasDaOp = turmasSubset.filter(t => t.operacoes?.nome === opNome);
           const numerosTurmas = turmasDaOp.map(t => t.numero_turma);
+          
           const colabsOp = colabs.filter(c => numerosTurmas.includes(c.turma_numero));
           const diarioOp = diarioComNome.filter(d => numerosTurmas.includes(d.turma_numero));
+          
           const totalReg = diarioOp.filter(d => d.tipo_registro !== 'Folga').length;
           const faltas = diarioOp.filter(d => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(d.tipo_registro)).length;
           const deslig = diarioOp.filter(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro)).length;
@@ -84,6 +99,7 @@ export default function DashboardPage() {
             to: colabsOp.length > 0 ? (deslig / colabsOp.length) * 100 : 0
           };
         });
+        
         return {
           abs: [...dados].sort((a, b) => b.abs - a.abs),
           to: [...dados].sort((a, b) => b.to - a.to)
@@ -97,15 +113,14 @@ export default function DashboardPage() {
 
     } catch (err) {
       console.error('Erro ao carregar dashboard:', err);
+    } finally {
+      setLoading(false);
     }
   }
 
   useEffect(() => {
-    // Carregamento inicial
     carregarDashboard();
-    setLoading(false);
 
-    // Listener Realtime para TURMAS e DIARIO_PRESENÇA
     const channel = supabase
       .channel('dashboard-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'turmas' }, carregarDashboard)
@@ -117,20 +132,19 @@ export default function DashboardPage() {
     };
   }, []);
 
-  const handleExport = () => { /* ... (Mantém sua função de exportação igual) ... */ };
+  const handleExport = () => { /* Sua função de exportação permanece igual */ };
 
-  if (loading) return <div className="p-4 text-center">Carregando...</div>;
+  if (loading) return <div className="p-4 text-center">Carregando dados do sistema...</div>;
 
   return (
     <div className="p-4 space-y-4 text-sm">
-      {/* ... (JSX permanece igual) ... */}
       <div className="flex justify-between items-center">
         <h1 className="text-xl font-bold">Dashboard Geral</h1>
         <button 
             onClick={handleExport}
             className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700 transition"
         >
-            <Download size={16} /> Exportar Relatório Detalhado
+            <Download size={16} /> Exportar Relatório
         </button>
       </div>
       
