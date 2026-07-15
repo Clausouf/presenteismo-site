@@ -52,7 +52,6 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
   return (
     <div className="mb-10 border rounded-lg bg-white shadow-sm overflow-hidden">
       <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
-        {/* CABEÇALHO ATUALIZADO CONFORME SOLICITADO */}
         <div className="font-bold text-slate-800 text-lg">
           Turma {turma.numero_turma}
           {` - ${responsavelNome || 'Sem responsável'}`}
@@ -184,7 +183,7 @@ export default function DiarioPresencaPage() {
     for (const t of turmasDaOp) {
       const [colabs, regs, obs] = await Promise.all([
         supabase.from('colaboradores').select('*').eq('numero_turma', t.numero_turma),
-        supabase.from('diario_presenca').select('*').eq('turma_numero', t.numero_turma), // Fix: usando turma_numero
+        supabase.from('diario_presenca').select('*').eq('turma_numero', t.numero_turma),
         supabase.from('turma_observacoes').select('*').eq('numero_turma', t.numero_turma).order('created_at', { ascending: false })
       ]);
       const mapaPresencas: any = {};
@@ -218,11 +217,9 @@ export default function DiarioPresencaPage() {
 
   const handleUpdatePresence = async (turmaNum: string, matricula: string, nome: string, dataStr: string, status: string) => {
     if (status === '') {
-        // Fix: usamos 'turma_numero' na tabela diario_presenca para evitar erro
         const { error } = await supabase.from('diario_presenca').delete().eq('turma_numero', turmaNum).eq('matricula', matricula).eq('data', dataStr);
         if (error) { alert('Erro ao deletar: ' + error.message); return; }
     } else {
-        // Fix: usamos 'turma_numero' na tabela diario_presenca
         const { error } = await supabase.from('diario_presenca').upsert({ turma_numero: turmaNum, matricula, colaborador_nome: nome, data: dataStr, tipo_registro: status });
         if (error) { alert('Erro ao salvar: ' + error.message); return; }
     }
@@ -251,18 +248,27 @@ export default function DiarioPresencaPage() {
   const handleDeleteTurma = async (turmaNum: string) => {
     if (!confirm(`TEM CERTEZA? Isso excluirá permanentemente a Turma ${turmaNum} e todos os seus dados vinculados.`)) return;
     
-    // Fix: A tabela 'diario_presenca' usa a coluna 'turma_numero', as outras parecem usar 'numero_turma'
     try {
+        // Deleta os registros de presença
         const { error: err1 } = await supabase.from('diario_presenca').delete().eq('turma_numero', turmaNum);
+        if (err1) throw new Error(`Erro na tabela diario_presenca: ${err1.message}`);
+
+        // Deleta os colaboradores
         const { error: err2 } = await supabase.from('colaboradores').delete().eq('numero_turma', turmaNum);
+        if (err2) throw new Error(`Erro na tabela colaboradores: ${err2.message}`);
+
+        // Deleta as observações
         const { error: err3 } = await supabase.from('turma_observacoes').delete().eq('numero_turma', turmaNum);
+        if (err3) throw new Error(`Erro na tabela turma_observacoes: ${err3.message}`);
+
+        // Deleta a turma
         const { error: err4 } = await supabase.from('turmas').delete().eq('numero_turma', turmaNum);
-        
-        if (err1 || err2 || err3 || err4) throw new Error("Erro ao deletar registros vinculados.");
+        if (err4) throw new Error(`Erro na tabela turmas: ${err4.message}`);
         
         setTurmas(prev => prev.filter(t => t.numero_turma !== turmaNum));
         alert('Turma excluída com sucesso.');
     } catch (err: any) {
+        console.error("Erro detalhado:", err);
         alert(err.message);
     }
   };
