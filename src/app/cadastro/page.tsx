@@ -1,261 +1,170 @@
 'use client';
 
-export const runtime = 'edge';
-
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Trash2 } from 'lucide-react';
 
-interface NovoColaboradorItem {
-  matricula: string;
-  nome: string;
-  cpf: string;
-  data_admissao: string;
-  jornada: string;
-  grupo_30_horas: boolean;
-}
+export default function CalendarioPage() {
+  const [turmas, setTurmas] = useState<any[]>([]);
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
 
-export default function CadastroTurmaPage() {
-  const [equipe, setEquipe] = useState<any[]>([]);
-  const [operacoes, setOperacoes] = useState<any[]>([]);
-  const [salas, setSalas] = useState<any[]>([]);
-
-  const [numeroTurma, setNumeroTurma] = useState('');
-  const [operacaoId, setOperacaoId] = useState(''); 
-  const [responsavelMatricula, setResponsavelMatricula] = useState('');
-  const [dataInicio, setDataInicio] = useState('');
-  const [dataAlo, setDataAlo] = useState('');
-  const [dataFim, setDataFim] = useState('');
-  const [sala, setSala] = useState('');
-  const [horarioInicio, setHorarioInicio] = useState(''); 
-
-  const [colaboradores, setColaboradores] = useState<NovoColaboradorItem[]>([]);
-  const [excelPasteText, setExcelPasteText] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [loadingData, setLoadingData] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
-
+  // Carregar turmas inicial e configurar listener em tempo real
   useEffect(() => {
-    async function loadData() {
-      try {
-        const [resEquipe, resOps, resSalas] = await Promise.all([
-          supabase.from('equipe').select('*'),
-          supabase.from('operacoes').select('*'),
-          supabase.from('salas').select('*') 
-        ]);
-        if (resEquipe.data) setEquipe(resEquipe.data);
-        if (resOps.data) setOperacoes(resOps.data);
-        if (resSalas.data) setSalas(resSalas.data);
-      } catch (err) {
-        console.error('Erro ao carregar dados:', err);
-      } finally {
-        setLoadingData(false);
+    async function carregarTurmas() {
+      // Incluindo o join com a tabela 'equipe' para buscar o nome do responsável
+      const { data, error } = await supabase
+        .from('turmas')
+        .select(`
+          *, 
+          operacoes(nome),
+          equipe(nome)
+        `)
+        .eq('status', 'Em Andamento');
+      
+      if (error) {
+        console.error("Erro ao carregar turmas:", error);
+      } else if (data) {
+        setTurmas(data);
       }
     }
-    loadData();
+
+    carregarTurmas();
+
+    // Configura o Realtime para atualizar o calendário automaticamente
+    const channel = supabase
+      .channel('calendario-db-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'turmas' },
+        () => {
+          carregarTurmas();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
-  const handleParseExcel = (text: string) => {
-    const lines = text.split('\n').filter(line => line.trim() !== '');
-    const novosColaboradores: NovoColaboradorItem[] = lines.map(line => {
-      const [matricula, nome, cpf, data_admissao, jornada, grupo_30] = line.split('\t');
-      return {
-        matricula: matricula || '',
-        nome: nome || '',
-        cpf: cpf || '',
-        data_admissao: data_admissao || '',
-        jornada: jornada || 'Integral',
-        grupo_30_horas: grupo_30?.trim().toLowerCase() === 'sim' || false
-      };
+  // Navegação de mês
+  const changeMonth = (offset: number) => {
+    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + offset, 1));
+    setSelectedDay(null);
+  };
+
+  const getDaysInMonth = () => {
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    
+    const days = [];
+    for (let i = 0; i < firstDay; i++) days.push(null);
+    for (let i = 1; i <= daysInMonth; i++) days.push(new Date(year, month, i));
+    return days;
+  };
+
+  const getTurmasDoDia = (date: Date) => {
+    return turmas.filter(t => {
+      // Ajuste para garantir que a comparação de datas considere o dia corretamente
+      const start = new Date(t.data_inicio + 'T00:00:00');
+      const end = new Date(t.data_fim + 'T00:00:00');
+      // Normalize a data de busca para comparação
+      const searchDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      return searchDate >= start && searchDate <= end;
     });
-    setColaboradores(novosColaboradores);
   };
 
-  const formatarDataParaBanco = (data: string) => {
-    if (!data) return null;
-    const partes = data.trim().split('/');
-    if (partes.length === 3) {
-      return `${partes[2]}-${partes[1]}-${partes[0]}`;
-    }
-    return data;
-  };
-
-  const handleSaveAll = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-
-    try {
-      const { error: errorTurma } = await supabase
-        .from('turmas')
-        .insert({
-          numero_turma: numeroTurma.trim(),
-          responsavel_matricula: responsavelMatricula,
-          operacao_id: Number(operacaoId),
-          data_inicio: dataInicio || null,
-          data_alo: dataAlo || null,
-          data_fim: dataFim || null,
-          sala: sala || null,
-          horario: horarioInicio || null,
-          status: 'Em Andamento'
-        });
-
-      if (errorTurma) throw errorTurma;
-
-      const loteInclusao = colaboradores.map((c) => ({
-        numero_turma: numeroTurma.trim(), // CORRIGIDO PARA numero_turma
-        matricula: c.matricula.trim(),
-        nome: c.nome.trim(),
-        cpf: c.cpf.replace(/\D/g, ''),
-        data_admissao: formatarDataParaBanco(c.data_admissao),
-        jornada: c.jornada,
-        grupo_30_horas: c.grupo_30_horas,
-        status: 'Ativo'
-      }));
-
-      const { error: errorColaboradores } = await supabase.from('colaboradores').insert(loteInclusao);
-      if (errorColaboradores) throw errorColaboradores;
-
-      setSuccess(true);
-    } catch (err: any) {
-      setError(`Erro ao salvar: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loadingData) return <div className="p-10 text-center">Carregando dados necessários...</div>;
-
-  if (success) {
-    return (
-      <div className="max-w-xl mx-auto p-8 text-center bg-white rounded-xl shadow mt-10">
-        <h2 className="text-2xl font-bold text-emerald-600 mb-2">Turma Cadastrada com Sucesso!</h2>
-        <p className="text-slate-500 mb-6">A turma e os colaboradores foram salvos no banco de dados.</p>
-        <button onClick={() => window.location.reload()} className="px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors">
-          Cadastrar Nova Turma
-        </button>
-      </div>
-    );
-  }
+  const days = getDaysInMonth();
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Criação de Turmas</h1>
-        <p className="text-sm text-slate-500 mt-1">Preencha os dados da turma e importe os colaboradores copiando do Excel.</p>
-      </div>
-
-      {error && <div className="p-4 bg-rose-50 text-rose-700 border border-rose-200 rounded-lg font-medium">{error}</div>}
-      
-      <form onSubmit={handleSaveAll} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div className="p-6 bg-slate-50 min-h-screen">
+      <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-6">
         
-        <div className="lg:col-span-1 bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-            
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">Número da Turma *</label>
-              <input type="text" value={numeroTurma} onChange={(e) => setNumeroTurma(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" required />
+        {/* CALENDÁRIO PRINCIPAL */}
+        <div className="lg:col-span-3 bg-white p-6 rounded-lg shadow">
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-xl font-bold">Cronograma de Treinamentos</h1>
+            <div className="flex items-center gap-4">
+              <button onClick={() => changeMonth(-1)} className="p-2 hover:bg-slate-100 rounded">◀</button>
+              <span className="font-bold">
+                {currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase()}
+              </span>
+              <button onClick={() => changeMonth(1)} className="p-2 hover:bg-slate-100 rounded">▶</button>
             </div>
-
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">Responsável *</label>
-              <select value={responsavelMatricula} onChange={(e) => setResponsavelMatricula(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" required>
-                  <option value="">Selecione...</option>
-                  {equipe.map((m) => <option key={m.matricula} value={m.matricula}>{m.nome}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">Operação *</label>
-              <select value={operacaoId} onChange={(e) => setOperacaoId(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" required>
-                  <option value="">Selecione...</option>
-                  {operacoes.map((o) => <option key={o.id} value={o.id}>{o.nome}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">Data Início *</label>
-              <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" required />
-            </div>
-
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">Horário de Início *</label>
-              <input type="time" value={horarioInicio} onChange={(e) => setHorarioInicio(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" required />
-            </div>
-
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">Data 1º Alô</label>
-              <input type="date" value={dataAlo} onChange={(e) => setDataAlo(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" />
-            </div>
-
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">Data Fim *</label>
-              <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" required />
-            </div>
-
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">Sala</label>
-              <select value={sala} onChange={(e) => setSala(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none">
-                  <option value="">Selecione a sala...</option>
-                  {salas.map((s) => <option key={s.id} value={s.nome}>{s.nome}</option>)}
-              </select>
-            </div>
-        </div>
-
-        <div className="lg:col-span-2 space-y-4">
-          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-            <h2 className="font-bold text-slate-800 mb-2">Importar Operadores (Cole do Excel)</h2>
-            <textarea 
-              className="w-full h-32 border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none font-mono"
-              placeholder="Cole aqui os dados copiados do Excel (Matrícula, Nome, CPF, Data Admissão, Jornada, Grupo 30h)..."
-              value={excelPasteText}
-              onChange={(e) => {
-                setExcelPasteText(e.target.value);
-                handleParseExcel(e.target.value);
-              }}
-            />
           </div>
 
-          {colaboradores.length > 0 && (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <table className="w-full text-sm text-left">
-                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600">
-                        <tr>
-                            <th className="p-3 font-bold">Matrícula</th>
-                            <th className="p-3 font-bold">Nome</th>
-                            <th className="p-3 font-bold text-center w-20">Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                        {colaboradores.map((c, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                                <td className="p-3 font-medium text-slate-800">{c.matricula}</td>
-                                <td className="p-3 text-slate-600">{c.nome}</td>
-                                <td className="p-3 text-center w-20">
-                                  <button 
-                                    type="button" 
-                                    onClick={() => setColaboradores(colaboradores.filter((_, i) => i !== idx))}
-                                    className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-md transition-colors"
-                                  >
-                                    <Trash2 size={16} />
-                                  </button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-          )}
-
-          <button 
-            type="submit" 
-            disabled={loading || colaboradores.length === 0} 
-            className="w-full bg-blue-600 text-white p-4 rounded-xl font-bold hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors shadow-sm"
-          >
-            {loading ? 'Salvando dados...' : 'Salvar Turma e Operadores'}
-          </button>
+          <div className="grid grid-cols-7 gap-2">
+            {['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'].map(d => (
+              <div key={d} className="text-center text-xs font-bold text-slate-400 p-2">{d}</div>
+            ))}
+            
+            {days.map((date, idx) => (
+              <div 
+                key={idx} 
+                onClick={() => date && setSelectedDay(date)}
+                className={`min-h-[100px] border rounded p-2 transition-all cursor-pointer ${
+                  date ? (selectedDay?.toDateString() === date.toDateString() ? 'bg-blue-50 border-blue-400' : 'bg-white hover:bg-slate-50') : 'bg-slate-100'
+                }`}
+              >
+                {date && (
+                  <>
+                    <span className="text-sm font-bold text-slate-700">{date.getDate()}</span>
+                    <div className="mt-2 space-y-1">
+                      {getTurmasDoDia(date).map((t) => (
+                        <div key={t.numero_turma} className="bg-blue-600 text-white text-[9px] p-1 rounded truncate">
+                          T{t.numero_turma} - {t.operacoes?.nome || 'Sem Op'}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
-      </form>
+
+        {/* SIDEBAR DETALHES */}
+        <div className="lg:col-span-1">
+          <div className="bg-white p-6 rounded-lg shadow border-l-4 border-blue-600 min-h-[400px]">
+            <h2 className="font-bold text-lg mb-4 flex items-center gap-2">
+              📅 Detalhes
+            </h2>
+            
+            {selectedDay ? (
+              <div className="space-y-4">
+                <p className="text-sm text-slate-500 border-b pb-2">
+                  {selectedDay.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                </p>
+                
+                {getTurmasDoDia(selectedDay).length > 0 ? (
+                  getTurmasDoDia(selectedDay).map((t) => (
+                    <div key={t.numero_turma} className="p-3 border rounded-lg bg-slate-50">
+                      <p className="font-bold text-blue-800">Turma {t.numero_turma}</p>
+                      <div className="text-xs text-slate-500 mb-2 space-y-0.5">
+                        <p>Operação: {t.operacoes?.nome || 'N/A'}</p>
+                        <p>Responsável: {t.equipe?.nome || 'Não definido'}</p>
+                      </div>
+                      <div className="text-sm">
+                        <span className="font-semibold text-slate-700">Sala: </span>
+                        <span className="text-slate-600">{t.sala || 'Não definida'}</span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-slate-400 italic">Nenhum treinamento nesta data.</p>
+                )}
+              </div>
+            ) : (
+              <div className="text-center mt-20 text-slate-400">
+                <p className="text-sm">Selecione um dia no calendário para visualizar os detalhes das turmas.</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+      </div>
     </div>
   );
 }
