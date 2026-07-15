@@ -22,6 +22,8 @@ export default function CadastroTurmaPage() {
   const [numeroTurma, setNumeroTurma] = useState('');
   const [operacaoId, setOperacaoId] = useState(''); 
   const [responsavelMatricula, setResponsavelMatricula] = useState('');
+  
+  // Datas e Sala
   const [dataInicio, setDataInicio] = useState('');
   const [dataAlo, setDataAlo] = useState('');
   const [dataFim, setDataFim] = useState('');
@@ -47,7 +49,7 @@ export default function CadastroTurmaPage() {
         if (resOps.data) setOperacoes(resOps.data);
         if (resSalas.data) setSalas(resSalas.data);
       } catch (err) {
-        console.error('Erro ao carregar dados iniciais:', err);
+        console.error('Erro ao carregar dados:', err);
       } finally {
         setLoadingData(false);
       }
@@ -90,7 +92,7 @@ export default function CadastroTurmaPage() {
       const { error: errorTurma } = await supabase
         .from('turmas')
         .insert({
-          numero_turma: numeroTurma.trim(),
+          numero_turma: numeroTurma.trim(), // Garantindo o nome correto da coluna
           responsavel_matricula: responsavelMatricula,
           operacao_id: Number(operacaoId),
           data_inicio: dataInicio || null,
@@ -105,7 +107,7 @@ export default function CadastroTurmaPage() {
 
       // 2. Inserir os colaboradores
       const loteInclusao = colaboradores.map((c) => ({
-        numero_turma: numeroTurma.trim(),
+        numero_turma: numeroTurma.trim(), // Garantindo o nome correto da coluna
         matricula: c.matricula.trim(),
         nome: c.nome.trim(),
         cpf: c.cpf.replace(/\D/g, ''),
@@ -148,6 +150,7 @@ export default function CadastroTurmaPage() {
       {error && <div className="p-4 bg-rose-50 text-rose-700 border border-rose-200 rounded-lg font-medium">{error}</div>}
       
       <form onSubmit={handleSaveAll} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
         {/* Formulário Principal */}
         <div className="lg:col-span-1 bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
             <div>
@@ -172,13 +175,30 @@ export default function CadastroTurmaPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">Datas *</label>
-              <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 mb-2" required placeholder="Início" />
-              <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2" required placeholder="Fim" />
+              <label className="block text-sm font-bold text-slate-700 mb-1">Sala *</label>
+              <select value={sala} onChange={(e) => setSala(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2" required>
+                  <option value="">Selecione a sala...</option>
+                  {salas.map((s) => <option key={s.id} value={s.nome}>{s.nome}</option>)}
+              </select>
             </div>
 
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">Horário</label>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Data Início *</label>
+              <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2" required />
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Data 1º Alô</label>
+              <input type="date" value={dataAlo} onChange={(e) => setDataAlo(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2" />
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Data Fim *</label>
+              <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2" required />
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Horário de Início *</label>
               <input type="time" value={horarioInicio} onChange={(e) => setHorarioInicio(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2" required />
             </div>
         </div>
