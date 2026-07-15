@@ -8,19 +8,36 @@ export default function CalendarioPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
 
-  // Carregar turmas com o nome da operação
+  // Carregar turmas inicial e configurar listener em tempo real
   useEffect(() => {
     async function carregarTurmas() {
-      // Ajuste: incluímos o join com a tabela 'operacoes' para buscar o 'nome'
-      // Se sua tabela tiver outro nome, substitua 'operacoes' abaixo
       const { data } = await supabase
         .from('turmas')
-        .select('*, operacoes(nome)') 
+        .select('*, operacoes(nome)')
         .eq('status', 'Em Andamento');
       
       if (data) setTurmas(data);
     }
+
     carregarTurmas();
+
+    // Configura o Realtime para atualizar o calendário automaticamente
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'turmas' },
+        (payload) => {
+          // Quando houver mudança (delete, insert, update), recarrega os dados
+          carregarTurmas();
+        }
+      )
+      .subscribe();
+
+    // Cleanup: remove o listener ao desmontar o componente
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // Navegação de mês
