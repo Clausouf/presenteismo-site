@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Trash2 } from 'lucide-react'; // Importado Trash2
+import { Trash2 } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +10,15 @@ const STATUS_OPTIONS = [
   { value: 'Em Andamento', label: 'Em Andamento' },
   { value: 'Finalizada', label: 'Finalizada' }
 ];
+
+// Componente auxiliar para evitar erro de Hidratação com datas
+function FormattedDate({ dateString }: { dateString: string }) {
+  const [date, setDate] = useState<string>('');
+  useEffect(() => {
+    setDate(new Date(dateString).toLocaleString());
+  }, [dateString]);
+  return <span>{date}</span>;
+}
 
 // --- COMPONENTE DA TURMA ---
 function TabelaTurma({ turma, colaboradores, presencas, obsInicial, onUpdate, onStatusChange, onDeleteTurma }: any) {
@@ -58,7 +67,6 @@ function TabelaTurma({ turma, colaboradores, presencas, obsInicial, onUpdate, on
               {STATUS_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
             </select>
           </div>
-          {/* Botão de Excluir Turma */}
           <button 
             onClick={() => onDeleteTurma(turma.numero_turma)}
             className="p-1.5 text-rose-500 hover:bg-rose-100 rounded transition-colors"
@@ -142,7 +150,7 @@ function TabelaTurma({ turma, colaboradores, presencas, obsInicial, onUpdate, on
           {observacoes.map((obs: any) => (
             <div key={obs.id} className="p-2 bg-white border rounded text-xs text-slate-600 shadow-sm flex justify-between items-start">
               <div>
-                <span className="text-[10px] text-slate-400 block">{new Date(obs.created_at).toLocaleString()}</span>
+                <span className="text-[10px] text-slate-400 block"><FormattedDate dateString={obs.created_at} /></span>
                 {obs.texto}
               </div>
               <button onClick={() => handleDeleteObs(obs.id)} className="text-rose-400 hover:text-rose-600 ml-2">
