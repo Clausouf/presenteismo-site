@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { Trash2 } from 'lucide-react'; // Importado Trash2
 
 export const dynamic = 'force-dynamic';
 
@@ -11,7 +12,7 @@ const STATUS_OPTIONS = [
 ];
 
 // --- COMPONENTE DA TURMA ---
-function TabelaTurma({ turma, colaboradores, presencas, obsInicial, onUpdate, onStatusChange }: any) {
+function TabelaTurma({ turma, colaboradores, presencas, obsInicial, onUpdate, onStatusChange, onDeleteTurma }: any) {
   const [observacoes, setObservacoes] = useState(obsInicial || []);
   const [novaObs, setNovaObs] = useState('');
   
@@ -32,6 +33,12 @@ function TabelaTurma({ turma, colaboradores, presencas, obsInicial, onUpdate, on
     if (data) { setObservacoes([data, ...observacoes]); setNovaObs(''); }
   };
 
+  const handleDeleteObs = async (id: number) => {
+    if (!confirm('Deseja excluir esta observação?')) return;
+    await supabase.from('turma_observacoes').delete().eq('id', id);
+    setObservacoes(observacoes.filter((o: any) => o.id !== id));
+  };
+
   return (
     <div className="mb-10 border rounded-lg bg-white shadow-sm overflow-hidden">
       <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
@@ -40,15 +47,25 @@ function TabelaTurma({ turma, colaboradores, presencas, obsInicial, onUpdate, on
           {turma.sala && ` - ${turma.sala}`}
           {turma.horario && ` - ${turma.horario.substring(0, 5)}`}
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-slate-500 uppercase">Status:</span>
-          <select
-            value={turma.status}
-            onChange={(e) => onStatusChange(turma.numero_turma, e.target.value)}
-            className="text-xs font-bold p-1 px-2 border rounded bg-white text-slate-700 cursor-pointer shadow-sm hover:bg-slate-100"
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-500 uppercase">Status:</span>
+            <select
+              value={turma.status}
+              onChange={(e) => onStatusChange(turma.numero_turma, e.target.value)}
+              className="text-xs font-bold p-1 px-2 border rounded bg-white text-slate-700 cursor-pointer shadow-sm hover:bg-slate-100"
+            >
+              {STATUS_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+            </select>
+          </div>
+          {/* Botão de Excluir Turma */}
+          <button 
+            onClick={() => onDeleteTurma(turma.numero_turma)}
+            className="p-1.5 text-rose-500 hover:bg-rose-100 rounded transition-colors"
+            title="Excluir Turma"
           >
-            {STATUS_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-          </select>
+            <Trash2 size={18} />
+          </button>
         </div>
       </div>
       
@@ -123,9 +140,14 @@ function TabelaTurma({ turma, colaboradores, presencas, obsInicial, onUpdate, on
         <button onClick={handleSalvarObs} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold mt-2 hover:bg-blue-700">Salvar Observação</button>
         <div className="mt-4 space-y-2">
           {observacoes.map((obs: any) => (
-            <div key={obs.id} className="p-2 bg-white border rounded text-xs text-slate-600 shadow-sm">
-              <span className="text-[10px] text-slate-400 block">{new Date(obs.created_at).toLocaleString()}</span>
-              {obs.texto}
+            <div key={obs.id} className="p-2 bg-white border rounded text-xs text-slate-600 shadow-sm flex justify-between items-start">
+              <div>
+                <span className="text-[10px] text-slate-400 block">{new Date(obs.created_at).toLocaleString()}</span>
+                {obs.texto}
+              </div>
+              <button onClick={() => handleDeleteObs(obs.id)} className="text-rose-400 hover:text-rose-600 ml-2">
+                <Trash2 size={14} />
+              </button>
             </div>
           ))}
         </div>
@@ -193,8 +215,23 @@ export default function DiarioPresencaPage() {
       alert("Erro ao salvar no banco: " + error.message); 
       return; 
     }
-    
     setTurmas(prev => prev.map(t => t.numero_turma === turmaNum ? { ...t, status: novoStatus } : t));
+  };
+
+  const handleDeleteTurma = async (turmaNum: string) => {
+    if (!confirm(`TEM CERTEZA? Isso excluirá permanentemente a Turma ${turmaNum} e todos os seus dados vinculados (presenças, observações e lista de operadores).`)) return;
+    
+    try {
+        await supabase.from('diario_presenca').delete().eq('turma_numero', turmaNum);
+        await supabase.from('colaboradores').delete().eq('turma_numero', turmaNum);
+        await supabase.from('turma_observacoes').delete().eq('turma_numero', turmaNum);
+        await supabase.from('turmas').delete().eq('numero_turma', turmaNum);
+        
+        setTurmas(prev => prev.filter(t => t.numero_turma !== turmaNum));
+        alert('Turma excluída com sucesso.');
+    } catch (err: any) {
+        alert('Erro ao excluir: ' + err.message);
+    }
   };
 
   const turmasFiltradas = selectedOperacaoId === 'todos' ? [] : turmas.filter(t => t.operacao_id === Number(selectedOperacaoId));
@@ -221,7 +258,16 @@ export default function DiarioPresencaPage() {
         const turmaObj = turmas.find(t => t.numero_turma === numTurma);
         if (!turmaObj || !dadosDasTurmas[numTurma]) return null;
         return (
-          <TabelaTurma key={numTurma} turma={turmaObj} colaboradores={dadosDasTurmas[numTurma].colabs} presencas={dadosDasTurmas[numTurma].presencas} obsInicial={dadosDasTurmas[numTurma].obs} onUpdate={handleUpdatePresence} onStatusChange={handleStatusChange} />
+          <TabelaTurma 
+            key={numTurma} 
+            turma={turmaObj} 
+            colaboradores={dadosDasTurmas[numTurma].colabs} 
+            presencas={dadosDasTurmas[numTurma].presencas} 
+            obsInicial={dadosDasTurmas[numTurma].obs} 
+            onUpdate={handleUpdatePresence} 
+            onStatusChange={handleStatusChange}
+            onDeleteTurma={handleDeleteTurma}
+          />
         );
       })}
     </div>
