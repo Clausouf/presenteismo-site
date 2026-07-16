@@ -13,7 +13,6 @@ export default function DashboardPage() {
   const [diario, setDiario] = useState<any[]>([]);
   const [salas, setSalas] = useState<any[]>([]);
   
-  // Filtros
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`;
@@ -39,7 +38,6 @@ export default function DashboardPage() {
     carregarDados();
   }, []);
 
-  // Reinicia turma ao mudar operação
   useEffect(() => { setSelectedTurma('Todas'); }, [selectedOp]);
 
   const dashboardData = useMemo(() => {
@@ -47,7 +45,7 @@ export default function DashboardPage() {
     const startOfMonth = new Date(year, month - 1, 1);
     const endOfMonth = new Date(year, month, 0, 23, 59, 59);
 
-    // 1. Filtrar Turmas pelo período do mês e pelos filtros manuais (Op/Turma)
+    // 1. Filtro base de turmas
     let turmasFiltradas = turmas.filter(t => {
       const tStart = new Date(t.data_inicio);
       const tEnd = t.data_fim ? new Date(t.data_fim) : new Date(2099, 0, 1);
@@ -59,8 +57,7 @@ export default function DashboardPage() {
 
     const numsTurmas = turmasFiltradas.map(t => t.numero_turma);
 
-    // 2. Classificar Colaboradores (Andamento vs Recrutamento)
-    // Regra: Se teve algum registro de "Presente" na história ATÉ o fim do mês, é Andamento.
+    // 2. Classificação de Colaboradores Global (Andamento vs Recrutamento)
     const colabsAnalise = colabs
       .filter(c => numsTurmas.includes(c.numero_turma))
       .map(c => {
@@ -73,35 +70,35 @@ export default function DashboardPage() {
     const andamentoPool = colabsAnalise.filter(c => c.isAndamento);
     const recrPool = colabsAnalise.filter(c => !c.isAndamento);
 
-    // 3. Cálculos de Presença (apenas dentro do mês selecionado)
-    const logsMes = diario.filter(d => numsTurmas.includes(d.numero_turma) && new Date(d.data) >= startOfMonth && new Date(d.data) <= endOfMonth);
-
-    const getStats = (pool: any[]) => {
+    // 3. Função de Cálculo Helper (reutilizável)
+    const getStatsForPool = (pool: any[]) => {
         const poolIds = pool.map(c => c.id);
-        const logsPool = logsMes.filter(l => poolIds.includes(l.colaborador_id));
+        const logsPool = diario.filter(d => poolIds.includes(d.colaborador_id) && new Date(d.data) >= startOfMonth && new Date(d.data) <= endOfMonth);
         const totalRegistros = logsPool.filter(l => l.tipo_registro !== 'Folga').length;
         const totalFaltas = logsPool.filter(l => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(l.tipo_registro)).length;
         const totalDeslig = pool.filter(c => c.isDesligado).length;
+        
         return {
             abs: totalRegistros > 0 ? (totalFaltas / totalRegistros) * 100 : 0,
             to: pool.length > 0 ? (totalDeslig / pool.length) * 100 : 0
         };
     };
 
-    const statsAndamento = getStats(andamentoPool);
-    const statsRecrutamento = getStats(recrPool);
-
-    // 4. Rankings
+    // 4. Rankings (Calculados de forma isolada por operação para evitar leakage)
     const opsDisponiveis = Array.from(new Set(turmasFiltradas.map(t => t.operacoes?.nome).filter(Boolean)));
     
     const rankingAndamento = opsDisponiveis.map(op => {
-        const pool = andamentoPool.filter(c => turmasFiltradas.find(t => t.numero_turma === c.numero_turma)?.operacoes?.nome === op);
-        return { nome: op, ...getStats(pool) };
+        const turmasOp = turmasFiltradas.filter(t => t.operacoes?.nome === op);
+        const numsOp = turmasOp.map(t => t.numero_turma);
+        const pool = andamentoPool.filter(c => numsOp.includes(c.numero_turma));
+        return { nome: op, ...getStatsForPool(pool) };
     });
 
     const rankingRecrutamento = opsDisponiveis.map(op => {
-        const pool = recrPool.filter(c => turmasFiltradas.find(t => t.numero_turma === c.numero_turma)?.operacoes?.nome === op);
-        return { nome: op, ...getStats(pool) };
+        const turmasOp = turmasFiltradas.filter(t => t.operacoes?.nome === op);
+        const numsOp = turmasOp.map(t => t.numero_turma);
+        const pool = recrPool.filter(c => numsOp.includes(c.numero_turma));
+        return { nome: op, ...getStatsForPool(pool) };
     });
 
     // 5. Salas
@@ -121,8 +118,8 @@ export default function DashboardPage() {
     return {
         ativas: turmasFiltradas.filter(t => t.status === 'Em Andamento').length,
         finalizadas: turmasFiltradas.filter(t => t.status === 'Finalizada').length,
-        statsAndamento,
-        statsRecrutamento,
+        statsAndamento: getStatsForPool(andamentoPool),
+        statsRecrutamento: getStatsForPool(recrPool),
         rankingAndamento,
         rankingRecrutamento,
         salaStats
@@ -148,7 +145,6 @@ export default function DashboardPage() {
             </div>
         </div>
 
-        {/* Cards */}
         <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
             <Card title="Ativas (Mês)" value={dashboardData.ativas} color="border-blue-500" />
             <Card title="Finaliz. (Mês)" value={dashboardData.finalizadas} color="border-green-500" />
@@ -159,7 +155,6 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Ocupação Salas */}
             <div className="bg-white p-4 rounded shadow border border-slate-200">
                 <h2 className="font-bold mb-4">Ocupação de Salas</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
@@ -184,7 +179,6 @@ export default function DashboardPage() {
                 </div>
             </div>
 
-            {/* Rankings */}
             <div className="space-y-4">
                 <Ranking title="Ranking Andamento" data={dashboardData.rankingAndamento} color="text-red-600" />
                 <Ranking title="Ranking Recrutamento" data={dashboardData.rankingRecrutamento} color="text-purple-600" />
