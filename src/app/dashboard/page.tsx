@@ -45,6 +45,7 @@ export default function DashboardPage() {
     const startOfMonth = new Date(year, month - 1, 1);
     const endOfMonth = new Date(year, month, 0, 23, 59, 59);
 
+    // 1. Filtrar escopo de turmas
     let turmasFiltradas = turmas.filter(t => {
       const tStart = new Date(t.data_inicio);
       const tEnd = t.data_fim ? new Date(t.data_fim) : new Date(2099, 0, 1);
@@ -56,23 +57,23 @@ export default function DashboardPage() {
 
     const numsTurmas = turmasFiltradas.map(t => t.numero_turma);
 
-    // LOGICA EXCLUSIVA:
-    // Se tem 'Presente', é Andamento. Se NÃO tem, é Recrutamento.
+    // 2. Classificação Binária Estrita
+    // Regra: Se tem 'Presente' no histórico = Andamento. Se nunca teve = Recrutamento.
     const colabsAnalise = colabs
       .filter(c => numsTurmas.includes(c.numero_turma))
       .map(c => {
         const historicoGeral = diario.filter(d => d.colaborador_id === c.id);
         const tevePresenca = historicoGeral.some(d => d.tipo_registro === 'Presente');
+        const temDesligamento = historicoGeral.some(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro));
         
         return { 
           ...c, 
-          isAndamento: tevePresenca, 
-          isRecrutamento: !tevePresenca,
-          temDesligamento: historicoGeral.some(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro))
+          categoria: tevePresenca ? 'ANDAMENTO' : 'RECRUTAMENTO',
+          temDesligamento 
         };
       });
 
-    // Função de Cálculo com escopo estrito de turma
+    // 3. Função de cálculo isolado (apenas dados da operação/turma alvo)
     const getStats = (pool: any[], turmasAlvo: string[]) => {
         const poolIds = pool.map(c => c.id);
         const logsPool = diario.filter(l => 
@@ -92,27 +93,28 @@ export default function DashboardPage() {
         };
     };
 
+    // 4. Rankings isolados
     const opsDisponiveis = Array.from(new Set(turmasFiltradas.map(t => t.operacoes?.nome).filter(Boolean)));
     
     const rankingAndamento = opsDisponiveis.map(op => {
         const turmasOp = turmasFiltradas.filter(t => t.operacoes?.nome === op);
         const numsOp = turmasOp.map(t => t.numero_turma);
-        const pool = colabsAnalise.filter(c => numsOp.includes(c.numero_turma) && c.isAndamento);
+        const pool = colabsAnalise.filter(c => numsOp.includes(c.numero_turma) && c.categoria === 'ANDAMENTO');
         return { nome: op, ...getStats(pool, numsOp) };
     });
 
     const rankingRecrutamento = opsDisponiveis.map(op => {
         const turmasOp = turmasFiltradas.filter(t => t.operacoes?.nome === op);
         const numsOp = turmasOp.map(t => t.numero_turma);
-        const pool = colabsAnalise.filter(c => numsOp.includes(c.numero_turma) && c.isRecrutamento);
+        const pool = colabsAnalise.filter(c => numsOp.includes(c.numero_turma) && c.categoria === 'RECRUTAMENTO');
         return { nome: op, ...getStats(pool, numsOp) };
     });
 
     return {
         ativas: turmasFiltradas.filter(t => t.status === 'Em Andamento').length,
         finalizadas: turmasFiltradas.filter(t => t.status === 'Finalizada').length,
-        statsAndamento: getStats(colabsAnalise.filter(c => c.isAndamento), numsTurmas),
-        statsRecrutamento: getStats(colabsAnalise.filter(c => c.isRecrutamento), numsTurmas),
+        statsAndamento: getStats(colabsAnalise.filter(c => c.categoria === 'ANDAMENTO'), numsTurmas),
+        statsRecrutamento: getStats(colabsAnalise.filter(c => c.categoria === 'RECRUTAMENTO'), numsTurmas),
         rankingAndamento,
         rankingRecrutamento,
         salaStats: salas.map(sala => {
