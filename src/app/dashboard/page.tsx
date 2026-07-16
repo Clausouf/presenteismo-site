@@ -3,10 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Download } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
-  
+  const [salaStats, setSalaStats] = useState<any[]>([]);
+
   const [metricas, setMetricas] = useState({
     turmasAtivas: 0,
     turmasFinalizadas: 0,
@@ -27,13 +31,18 @@ export default function DashboardPage() {
       const anoAtual = hoje.getFullYear();
       const filtroData = `${anoAtual}-${mesAtual}`;
 
-      const [turmasRes, colabsRes, diarioRes] = await Promise.all([
+      // Configuração para cálculo de dias ocupados
+      const startOfMonth = new Date(anoAtual, hoje.getMonth(), 1);
+      const endOfMonth = new Date(anoAtual, hoje.getMonth() + 1, 0);
+
+      const [turmasRes, colabsRes, diarioRes, salasRes] = await Promise.all([
         supabase.from('turmas').select('*, operacoes(nome)'),
         supabase.from('colaboradores').select('*'),
-        supabase.from('diario_presenca').select('*'), 
+        supabase.from('diario_presenca').select('*'),
+        supabase.from('salas').select('*')
       ]);
 
-      if (turmasRes.error || colabsRes.error || diarioRes.error) {
+      if (turmasRes.error || colabsRes.error || diarioRes.error || salasRes.error) {
         console.error("Erro ao buscar dados:", turmasRes.error || colabsRes.error || diarioRes.error);
         return;
       }
@@ -41,6 +50,7 @@ export default function DashboardPage() {
       const turmas = turmasRes.data || [];
       const colabs = colabsRes.data || [];
       const diario = diarioRes.data || [];
+      const salas = salasRes.data || [];
       
       const diarioComNome = diario
         .map(d => ({
@@ -49,14 +59,36 @@ export default function DashboardPage() {
         }))
         .filter(d => d.data && d.data.startsWith(filtroData));
 
-      // Lógica de métricas
+      // --- Cálculo de Ocupação de Salas ---
+      const stats = salas.map(sala => {
+        const turmasNaSala = turmas.filter(t => t.sala === sala.nome);
+        let diasOcupados = 0;
+        
+        turmasNaSala.forEach(t => {
+          if (t.data_inicio && t.data_fim) {
+            const tInicio = new Date(t.data_inicio);
+            const tFim = new Date(t.data_fim);
+            
+            // Intersecção do período da turma com o mês atual
+            const inicioReal = tInicio < startOfMonth ? startOfMonth : tInicio;
+            const fimReal = tFim > endOfMonth ? endOfMonth : tFim;
+            
+            if (fimReal >= inicioReal) {
+              const diffTime = Math.abs(fimReal.getTime() - inicioReal.getTime());
+              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+              diasOcupados += diffDays;
+            }
+          }
+        });
+        return { name: sala.nome, dias: diasOcupados, totalTurmas: turmasNaSala.length };
+      }).filter(s => s.dias > 0);
+
+      setSalaStats(stats);
+
+      // --- Lógica de métricas ---
       const ativas = turmas.filter(t => t.status === 'Em Andamento');
       const finalizadas = turmas.filter(t => t.status === 'Finalizada');
-      
-      // Ajuste: usando numero_turma
-      const emTreinamento = colabs.filter(c => 
-        ativas.some(t => t.numero_turma === c.numero_turma)
-      );
+      const emTreinamento = colabs.filter(c => ativas.some(t => t.numero_turma === c.numero_turma));
       
       const totalDesligGeral = diarioComNome.filter(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro)).length;
       const totalRegistrosGeral = diarioComNome.filter(d => d.tipo_registro !== 'Folga').length;
@@ -76,32 +108,17 @@ export default function DashboardPage() {
         const dados = opsUnicas.map(opNome => {
           const turmasDaOp = turmasSubset.filter(t => t.operacoes?.nome === opNome);
           const numerosTurmas = turmasDaOp.map(t => t.numero_turma);
-          
-          // Ajuste: usando numero_turma
           const colabsOp = colabs.filter(c => numerosTurmas.includes(c.numero_turma));
           const diarioOp = diarioComNome.filter(d => numerosTurmas.includes(d.numero_turma));
-          
           const totalReg = diarioOp.filter(d => d.tipo_registro !== 'Folga').length;
           const faltas = diarioOp.filter(d => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(d.tipo_registro)).length;
           const deslig = diarioOp.filter(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro)).length;
-
-          return {
-            nome: opNome,
-            abs: totalReg > 0 ? (faltas / totalReg) * 100 : 0,
-            to: colabsOp.length > 0 ? (deslig / colabsOp.length) * 100 : 0
-          };
+          return { nome: opNome, abs: totalReg > 0 ? (faltas / totalReg) * 100 : 0, to: colabsOp.length > 0 ? (deslig / colabsOp.length) * 100 : 0 };
         });
-        
-        return {
-          abs: [...dados].sort((a, b) => b.abs - a.abs),
-          to: [...dados].sort((a, b) => b.to - a.to)
-        };
+        return { abs: [...dados].sort((a, b) => b.abs - a.abs), to: [...dados].sort((a, b) => b.to - a.to) };
       };
 
-      setRankings({
-        andamento: getOpRankings(ativas),
-        finalizadas: getOpRankings(finalizadas)
-      });
+      setRankings({ andamento: getOpRankings(ativas), finalizadas: getOpRankings(finalizadas) });
 
     } catch (err) {
       console.error('Erro ao carregar dashboard:', err);
@@ -120,15 +137,13 @@ export default function DashboardPage() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  const handleExport = () => { /* Sua lógica */ };
+  const handleExport = () => { /* Sua lógica de exportação */ };
 
   if (loading) return <div className="p-4 text-center">Carregando dados...</div>;
 
   return (
-    // ... O seu JSX permanece igual ao que você já tinha
     <div className="p-4 space-y-4 text-sm">
-      {/* (O restante do layout continua igual) */}
-       <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center">
         <h1 className="text-xl font-bold">Dashboard Geral</h1>
         <button onClick={handleExport} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700 transition">
             <Download size={16} /> Exportar Relatório
@@ -155,6 +170,32 @@ export default function DashboardPage() {
         <div className="bg-white p-3 rounded shadow border-l-4 border-yellow-500">
           <p className="text-[10px] font-bold text-gray-500 uppercase">ABS Mensal</p>
           <p className="text-xl font-bold">{metricas.absMensal.toFixed(1)}%</p>
+        </div>
+      </div>
+
+      {/* Gráfico de Ocupação de Salas */}
+      <div className="bg-white p-4 rounded shadow border border-slate-200">
+        <h2 className="font-bold mb-2">Ocupação de Salas (Dias no Mês)</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+            <div className="h-48">
+                <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                        <Pie data={salaStats} dataKey="dias" nameKey="name" cx="50%" cy="50%" outerRadius={60} label>
+                            {salaStats.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                        </Pie>
+                        <Tooltip />
+                        <Legend />
+                    </PieChart>
+                </ResponsiveContainer>
+            </div>
+            <div className="space-y-2">
+                {salaStats.map((s, i) => (
+                    <div key={i} className="flex justify-between p-2 bg-slate-50 rounded border text-xs">
+                        <span className="font-bold">{s.name}</span>
+                        <span>{s.dias} dias ocupados | {s.totalTurmas} turmas</span>
+                    </div>
+                ))}
+            </div>
         </div>
       </div>
 
