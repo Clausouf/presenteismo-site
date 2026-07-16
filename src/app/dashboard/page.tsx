@@ -57,25 +57,29 @@ export default function DashboardPage() {
 
     const numsTurmas = turmasFiltradas.map(t => t.numero_turma);
 
-    // 2. Classificação de Colaboradores (Regras de Negócio)
+    // 2. Classificação de Colaboradores (Regras Atualizadas)
     const colabsAnalise = colabs
       .filter(c => numsTurmas.includes(c.numero_turma))
       .map(c => {
         const historicoGeral = diario.filter(d => d.colaborador_id === c.id);
-        const hasPresenceEver = historicoGeral.some(d => d.tipo_registro === 'Presente');
-        const isDesligado = historicoGeral.some(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro));
         
+        // Regra: Teve presença alguma vez? É Andamento.
+        const temPresenca = historicoGeral.some(d => d.tipo_registro === 'Presença');
+        
+        // Desligamento ocorre em qualquer cenário
+        const temDesligamento = historicoGeral.some(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro));
+
         return { 
           ...c, 
-          isAndamento: hasPresenceEver, // Regras 4 e 5: se teve presença, é andamento.
-          isDesligado: isDesligado
+          isAndamento: temPresenca, 
+          isRecrutamento: !temPresenca,
+          temDesligamento
         };
       });
 
     // 3. Funções de Cálculo Isolado
     const getStats = (pool: any[], turmasAlvo: string[]) => {
         const poolIds = pool.map(c => c.id);
-        // Filtra logs apenas dentro do mês selecionado E apenas das turmas dessa operação/escopo
         const logsPool = diario.filter(l => 
             poolIds.includes(l.colaborador_id) && 
             turmasAlvo.includes(l.numero_turma) &&
@@ -85,7 +89,7 @@ export default function DashboardPage() {
         
         const totalRegistros = logsPool.filter(l => l.tipo_registro !== 'Folga').length;
         const totalFaltas = logsPool.filter(l => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(l.tipo_registro)).length;
-        const totalDeslig = pool.filter(c => c.isDesligado).length;
+        const totalDeslig = pool.filter(c => c.temDesligamento).length;
         
         return {
             abs: totalRegistros > 0 ? (totalFaltas / totalRegistros) * 100 : 0,
@@ -106,13 +110,12 @@ export default function DashboardPage() {
     const rankingRecrutamento = opsDisponiveis.map(op => {
         const turmasOp = turmasFiltradas.filter(t => t.operacoes?.nome === op);
         const numsOp = turmasOp.map(t => t.numero_turma);
-        const pool = colabsAnalise.filter(c => numsOp.includes(c.numero_turma) && !c.isAndamento);
+        const pool = colabsAnalise.filter(c => numsOp.includes(c.numero_turma) && c.isRecrutamento);
         return { nome: op, ...getStats(pool, numsOp) };
     });
 
-    // 5. Cálculos Gerais (Somatório)
     const andamentoPoolGlobal = colabsAnalise.filter(c => c.isAndamento);
-    const recrPoolGlobal = colabsAnalise.filter(c => !c.isAndamento);
+    const recrPoolGlobal = colabsAnalise.filter(c => c.isRecrutamento);
 
     return {
         ativas: turmasFiltradas.filter(t => t.status === 'Em Andamento').length,
