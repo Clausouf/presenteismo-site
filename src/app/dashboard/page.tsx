@@ -31,7 +31,6 @@ export default function DashboardPage() {
       const anoAtual = hoje.getFullYear();
       const filtroData = `${anoAtual}-${mesAtual}`;
 
-      // Configuração para cálculo de dias ocupados
       const startOfMonth = new Date(anoAtual, hoje.getMonth(), 1);
       const endOfMonth = new Date(anoAtual, hoje.getMonth() + 1, 0);
 
@@ -43,7 +42,7 @@ export default function DashboardPage() {
       ]);
 
       if (turmasRes.error || colabsRes.error || diarioRes.error || salasRes.error) {
-        console.error("Erro ao buscar dados:", turmasRes.error || colabsRes.error || diarioRes.error);
+        console.error("Erro ao buscar dados:", turmasRes.error || colabsRes.error || diarioRes.error || salasRes.error);
         return;
       }
 
@@ -59,28 +58,30 @@ export default function DashboardPage() {
         }))
         .filter(d => d.data && d.data.startsWith(filtroData));
 
-      // --- Cálculo de Ocupação de Salas ---
+      // --- CORREÇÃO: Lógica de Ocupação de Salas (Dias Únicos) ---
       const stats = salas.map(sala => {
         const turmasNaSala = turmas.filter(t => t.sala === sala.nome);
-        let diasOcupados = 0;
+        const diasOcupadosSet = new Set<string>();
         
         turmasNaSala.forEach(t => {
           if (t.data_inicio && t.data_fim) {
-            const tInicio = new Date(t.data_inicio);
-            const tFim = new Date(t.data_fim);
-            
-            // Intersecção do período da turma com o mês atual
-            const inicioReal = tInicio < startOfMonth ? startOfMonth : tInicio;
-            const fimReal = tFim > endOfMonth ? endOfMonth : tFim;
-            
-            if (fimReal >= inicioReal) {
-              const diffTime = Math.abs(fimReal.getTime() - inicioReal.getTime());
-              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-              diasOcupados += diffDays;
+            let tInicio = new Date(t.data_inicio);
+            let tFim = new Date(t.data_fim);
+
+            // Percorre cada dia da turma
+            for (let d = new Date(tInicio); d <= tFim; d.setDate(d.getDate() + 1)) {
+              if (d >= startOfMonth && d <= endOfMonth) {
+                diasOcupadosSet.add(d.toISOString().split('T')[0]);
+              }
             }
           }
         });
-        return { name: sala.nome, dias: diasOcupados, totalTurmas: turmasNaSala.length };
+
+        return { 
+          name: sala.nome, 
+          dias: diasOcupadosSet.size, 
+          totalTurmas: turmasNaSala.length 
+        };
       }).filter(s => s.dias > 0);
 
       setSalaStats(stats);
@@ -102,7 +103,7 @@ export default function DashboardPage() {
         absMensal: totalRegistrosGeral > 0 ? (totalFaltasGeral / totalRegistrosGeral) * 100 : 0
       });
 
-      // Cálculo de Rankings
+      // Cálculo de Rankings (usando numero_turma)
       const getOpRankings = (turmasSubset: any[]) => {
         const opsUnicas = [...new Set(turmasSubset.map(t => t.operacoes?.nome).filter(Boolean))];
         const dados = opsUnicas.map(opNome => {
@@ -137,19 +138,15 @@ export default function DashboardPage() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  const handleExport = () => { /* Sua lógica de exportação */ };
-
   if (loading) return <div className="p-4 text-center">Carregando dados...</div>;
 
   return (
     <div className="p-4 space-y-4 text-sm">
       <div className="flex justify-between items-center">
         <h1 className="text-xl font-bold">Dashboard Geral</h1>
-        <button onClick={handleExport} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700 transition">
-            <Download size={16} /> Exportar Relatório
-        </button>
       </div>
       
+      {/* Cards de Métricas */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div className="bg-white p-3 rounded shadow border-l-4 border-blue-500">
           <p className="text-[10px] font-bold text-gray-500 uppercase">Turmas Ativas</p>
@@ -199,6 +196,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Rankings */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white p-4 rounded shadow border border-blue-100">
           <h2 className="font-bold mb-2 text-blue-600">Turmas em Andamento</h2>
