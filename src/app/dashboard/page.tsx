@@ -2,8 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Download } from 'lucide-react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
@@ -13,7 +12,15 @@ export default function DashboardPage() {
   const [colabs, setColabs] = useState<any[]>([]);
   const [diario, setDiario] = useState<any[]>([]);
   const [salas, setSalas] = useState<any[]>([]);
+  
+  // Estados para filtros
   const [selectedOp, setSelectedOp] = useState('Todas');
+  const [selectedTurma, setSelectedTurma] = useState('Todas');
+
+  // Resetar filtro de turma quando a operação mudar
+  useEffect(() => {
+    setSelectedTurma('Todas');
+  }, [selectedOp]);
 
   async function carregarDashboard() {
     setLoading(true);
@@ -40,22 +47,28 @@ export default function DashboardPage() {
     carregarDashboard();
   }, []);
 
-  // Lista de operações únicas para o select
   const operacoesDisponiveis = useMemo(() => {
     const ops = turmas.map(t => t.operacoes?.nome).filter(Boolean);
     return ['Todas', ...Array.from(new Set(ops))];
   }, [turmas]);
 
-  // --- Lógica principal de cálculo (recalcula ao trocar a operação) ---
+  // Filtra as turmas disponíveis baseada na operação selecionada
+  const turmasDisponiveis = useMemo(() => {
+    if (selectedOp === 'Todas') return turmas;
+    return turmas.filter(t => t.operacoes?.nome === selectedOp);
+  }, [selectedOp, turmas]);
+
+  // --- Lógica de cálculo unificada ---
   const dashboardData = useMemo(() => {
     const hoje = new Date();
     const filtroData = `${hoje.getFullYear()}-${(hoje.getMonth() + 1).toString().padStart(2, '0')}`;
     const startOfMonth = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
     const endOfMonth = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
 
-    const turmasFiltradas = selectedOp === 'Todas' 
-      ? turmas 
-      : turmas.filter(t => t.operacoes?.nome === selectedOp);
+    // Filtra as turmas aplicando Op e Turma
+    const turmasFiltradas = turmasDisponiveis.filter(t => 
+      selectedTurma === 'Todas' ? true : t.numero_turma === selectedTurma
+    );
 
     const numerosTurmas = turmasFiltradas.map(t => t.numero_turma);
     const colabsFiltrados = colabs.filter(c => numerosTurmas.includes(c.numero_turma));
@@ -64,14 +77,13 @@ export default function DashboardPage() {
       d.data?.startsWith(filtroData)
     );
 
-    // Cálculos de Métricas
+    // Cálculos
     const ativas = turmasFiltradas.filter(t => t.status === 'Em Andamento');
     const finalizadas = turmasFiltradas.filter(t => t.status === 'Finalizada');
     const totalDeslig = diarioFiltrado.filter(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro)).length;
     const totalReg = diarioFiltrado.filter(d => d.tipo_registro !== 'Folga').length;
     const totalFaltas = diarioFiltrado.filter(d => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(d.tipo_registro)).length;
 
-    // Cálculo Salas (Unique Days)
     const salaStats = salas.map(sala => {
       const turmasNaSala = turmasFiltradas.filter(t => t.sala === sala.nome);
       const diasOcupadosSet = new Set<string>();
@@ -92,7 +104,7 @@ export default function DashboardPage() {
         const turmasDaOp = turmasSubset.filter(t => t.operacoes?.nome === opNome);
         const nums = turmasDaOp.map(t => t.numero_turma);
         const colabsOp = colabs.filter(c => nums.includes(c.numero_turma));
-        const diarioOp = diario.filter(d => nums.includes(d.numero_turma)); // Usa diario total para cálculo correto
+        const diarioOp = diario.filter(d => nums.includes(d.numero_turma));
         const totalRegOp = diarioOp.filter(d => d.tipo_registro !== 'Folga').length;
         const faltas = diarioOp.filter(d => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(d.tipo_registro)).length;
         const deslig = diarioOp.filter(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro)).length;
@@ -106,20 +118,28 @@ export default function DashboardPage() {
       salaStats,
       rankings: { andamento: getOpRankings(ativas), finalizadas: getOpRankings(finalizadas) }
     };
-  }, [selectedOp, turmas, colabs, diario, salas]);
+  }, [selectedOp, selectedTurma, turmasDisponiveis, colabs, diario, salas]);
 
   if (loading) return <div className="p-4 text-center">Carregando dados...</div>;
 
   return (
     <div className="p-4 space-y-4 text-sm">
-      <div className="flex justify-between items-center bg-white p-4 rounded shadow">
+      <div className="flex justify-between items-center bg-white p-4 rounded shadow gap-4">
         <h1 className="text-xl font-bold">Dashboard Geral</h1>
-        <select value={selectedOp} onChange={(e) => setSelectedOp(e.target.value)} className="border rounded p-2 bg-gray-50 font-bold">
-          {operacoesDisponiveis.map(op => <option key={op} value={op}>{op}</option>)}
-        </select>
+        
+        <div className="flex gap-2">
+            <select value={selectedOp} onChange={(e) => setSelectedOp(e.target.value)} className="border rounded p-2 bg-gray-50 font-bold">
+            {operacoesDisponiveis.map(op => <option key={op} value={op}>{op}</option>)}
+            </select>
+            
+            <select value={selectedTurma} onChange={(e) => setSelectedTurma(e.target.value)} className="border rounded p-2 bg-gray-50 font-bold">
+            <option value="Todas">Todas Turmas</option>
+            {turmasDisponiveis.map(t => <option key={t.numero_turma} value={t.numero_turma}>{t.numero_turma}</option>)}
+            </select>
+        </div>
       </div>
       
-      {/* Cards */}
+      {/* Cards e restante do layout permanecem iguais */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div className="bg-white p-3 rounded shadow border-l-4 border-blue-500"><p className="text-[10px] font-bold text-gray-500 uppercase">Turmas Ativas</p><p className="text-xl font-bold">{dashboardData.metricas.turmasAtivas}</p></div>
         <div className="bg-white p-3 rounded shadow border-l-4 border-green-500"><p className="text-[10px] font-bold text-gray-500 uppercase">Turmas Finalizadas</p><p className="text-xl font-bold">{dashboardData.metricas.turmasFinalizadas}</p></div>
@@ -128,7 +148,6 @@ export default function DashboardPage() {
         <div className="bg-white p-3 rounded shadow border-l-4 border-yellow-500"><p className="text-[10px] font-bold text-gray-500 uppercase">ABS Mensal</p><p className="text-xl font-bold">{dashboardData.metricas.absMensal.toFixed(1)}%</p></div>
       </div>
 
-      {/* Gráfico de Salas */}
       <div className="bg-white p-4 rounded shadow border border-slate-200">
         <h2 className="font-bold mb-2">Ocupação de Salas (Dias no Mês)</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
@@ -154,7 +173,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Rankings */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white p-4 rounded shadow border border-blue-100">
           <h2 className="font-bold mb-2 text-blue-600">Turmas em Andamento</h2>
