@@ -7,9 +7,6 @@ import { Download } from 'lucide-react';
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   
-  const [diarioData, setDiarioData] = useState<any[]>([]);
-  const [colaboradores, setColaboradores] = useState<any[]>([]);
-  
   const [metricas, setMetricas] = useState({
     turmasAtivas: 0,
     turmasFinalizadas: 0,
@@ -30,7 +27,6 @@ export default function DashboardPage() {
       const anoAtual = hoje.getFullYear();
       const filtroData = `${anoAtual}-${mesAtual}`;
 
-      // Buscando dados de turmas, colaboradores e diário
       const [turmasRes, colabsRes, diarioRes] = await Promise.all([
         supabase.from('turmas').select('*, operacoes(nome)'),
         supabase.from('colaboradores').select('*'),
@@ -45,10 +41,7 @@ export default function DashboardPage() {
       const turmas = turmasRes.data || [];
       const colabs = colabsRes.data || [];
       const diario = diarioRes.data || [];
-
-      setColaboradores(colabs);
       
-      // Filtra diário pelo mês atual e une com o nome do colaborador
       const diarioComNome = diario
         .map(d => ({
           ...d,
@@ -56,15 +49,13 @@ export default function DashboardPage() {
         }))
         .filter(d => d.data && d.data.startsWith(filtroData));
 
-      setDiarioData(diarioComNome);
-
-      // Lógica de métricas usando numero_turma
+      // Lógica de métricas
       const ativas = turmas.filter(t => t.status === 'Em Andamento');
       const finalizadas = turmas.filter(t => t.status === 'Finalizada');
       
-      // Ops em treinamento baseada na turma_numero do colaborador
+      // Ajuste: usando numero_turma
       const emTreinamento = colabs.filter(c => 
-        ativas.some(t => t.numero_turma === c.turma_numero)
+        ativas.some(t => t.numero_turma === c.numero_turma)
       );
       
       const totalDesligGeral = diarioComNome.filter(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro)).length;
@@ -86,8 +77,9 @@ export default function DashboardPage() {
           const turmasDaOp = turmasSubset.filter(t => t.operacoes?.nome === opNome);
           const numerosTurmas = turmasDaOp.map(t => t.numero_turma);
           
-          const colabsOp = colabs.filter(c => numerosTurmas.includes(c.turma_numero));
-          const diarioOp = diarioComNome.filter(d => numerosTurmas.includes(d.turma_numero));
+          // Ajuste: usando numero_turma
+          const colabsOp = colabs.filter(c => numerosTurmas.includes(c.numero_turma));
+          const diarioOp = diarioComNome.filter(d => numerosTurmas.includes(d.numero_turma));
           
           const totalReg = diarioOp.filter(d => d.tipo_registro !== 'Folga').length;
           const faltas = diarioOp.filter(d => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(d.tipo_registro)).length;
@@ -120,30 +112,25 @@ export default function DashboardPage() {
 
   useEffect(() => {
     carregarDashboard();
-
     const channel = supabase
       .channel('dashboard-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'turmas' }, carregarDashboard)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'diario_presenca' }, carregarDashboard)
       .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
-  const handleExport = () => { /* Sua função de exportação permanece igual */ };
+  const handleExport = () => { /* Sua lógica */ };
 
-  if (loading) return <div className="p-4 text-center">Carregando dados do sistema...</div>;
+  if (loading) return <div className="p-4 text-center">Carregando dados...</div>;
 
   return (
+    // ... O seu JSX permanece igual ao que você já tinha
     <div className="p-4 space-y-4 text-sm">
-      <div className="flex justify-between items-center">
+      {/* (O restante do layout continua igual) */}
+       <div className="flex justify-between items-center">
         <h1 className="text-xl font-bold">Dashboard Geral</h1>
-        <button 
-            onClick={handleExport}
-            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700 transition"
-        >
+        <button onClick={handleExport} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700 transition">
             <Download size={16} /> Exportar Relatório
         </button>
       </div>
