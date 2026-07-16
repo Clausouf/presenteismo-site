@@ -45,7 +45,7 @@ export default function DashboardPage() {
     const startOfMonth = new Date(year, month - 1, 1);
     const endOfMonth = new Date(year, month, 0, 23, 59, 59);
 
-    // 1. Filtro base de turmas
+    // 1. Filtros de Escopo
     let turmasFiltradas = turmas.filter(t => {
       const tStart = new Date(t.data_inicio);
       const tEnd = t.data_fim ? new Date(t.data_fim) : new Date(2099, 0, 1);
@@ -57,23 +57,32 @@ export default function DashboardPage() {
 
     const numsTurmas = turmasFiltradas.map(t => t.numero_turma);
 
-    // 2. Classificação de Colaboradores Global (Andamento vs Recrutamento)
+    // 2. Classificação de Colaboradores (Regras de Negócio)
     const colabsAnalise = colabs
       .filter(c => numsTurmas.includes(c.numero_turma))
       .map(c => {
-        const historicoAteMes = diario.filter(d => d.colaborador_id === c.id && new Date(d.data) <= endOfMonth);
-        const hasPresente = historicoAteMes.some(d => d.tipo_registro === 'Presente');
-        const isDesligado = historicoAteMes.some(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro));
-        return { ...c, isAndamento: hasPresente, isDesligado };
+        const historicoGeral = diario.filter(d => d.colaborador_id === c.id);
+        const hasPresenceEver = historicoGeral.some(d => d.tipo_registro === 'Presente');
+        const isDesligado = historicoGeral.some(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro));
+        
+        return { 
+          ...c, 
+          isAndamento: hasPresenceEver, // Regras 4 e 5: se teve presença, é andamento.
+          isDesligado: isDesligado
+        };
       });
 
-    const andamentoPool = colabsAnalise.filter(c => c.isAndamento);
-    const recrPool = colabsAnalise.filter(c => !c.isAndamento);
-
-    // 3. Função de Cálculo Helper (reutilizável)
-    const getStatsForPool = (pool: any[]) => {
+    // 3. Funções de Cálculo Isolado
+    const getStats = (pool: any[], turmasAlvo: string[]) => {
         const poolIds = pool.map(c => c.id);
-        const logsPool = diario.filter(d => poolIds.includes(d.colaborador_id) && new Date(d.data) >= startOfMonth && new Date(d.data) <= endOfMonth);
+        // Filtra logs apenas dentro do mês selecionado E apenas das turmas dessa operação/escopo
+        const logsPool = diario.filter(l => 
+            poolIds.includes(l.colaborador_id) && 
+            turmasAlvo.includes(l.numero_turma) &&
+            new Date(l.data) >= startOfMonth && 
+            new Date(l.data) <= endOfMonth
+        );
+        
         const totalRegistros = logsPool.filter(l => l.tipo_registro !== 'Folga').length;
         const totalFaltas = logsPool.filter(l => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(l.tipo_registro)).length;
         const totalDeslig = pool.filter(c => c.isDesligado).length;
@@ -84,45 +93,46 @@ export default function DashboardPage() {
         };
     };
 
-    // 4. Rankings (Calculados de forma isolada por operação para evitar leakage)
+    // 4. Rankings (Isolando por operação)
     const opsDisponiveis = Array.from(new Set(turmasFiltradas.map(t => t.operacoes?.nome).filter(Boolean)));
     
     const rankingAndamento = opsDisponiveis.map(op => {
         const turmasOp = turmasFiltradas.filter(t => t.operacoes?.nome === op);
         const numsOp = turmasOp.map(t => t.numero_turma);
-        const pool = andamentoPool.filter(c => numsOp.includes(c.numero_turma));
-        return { nome: op, ...getStatsForPool(pool) };
+        const pool = colabsAnalise.filter(c => numsOp.includes(c.numero_turma) && c.isAndamento);
+        return { nome: op, ...getStats(pool, numsOp) };
     });
 
     const rankingRecrutamento = opsDisponiveis.map(op => {
         const turmasOp = turmasFiltradas.filter(t => t.operacoes?.nome === op);
         const numsOp = turmasOp.map(t => t.numero_turma);
-        const pool = recrPool.filter(c => numsOp.includes(c.numero_turma));
-        return { nome: op, ...getStatsForPool(pool) };
+        const pool = colabsAnalise.filter(c => numsOp.includes(c.numero_turma) && !c.isAndamento);
+        return { nome: op, ...getStats(pool, numsOp) };
     });
 
-    // 5. Salas
-    const salaStats = salas.map(sala => {
-        const turmasNaSala = turmasFiltradas.filter(t => t.sala === sala.nome);
-        const diasOcupadosSet = new Set<string>();
-        turmasNaSala.forEach(t => {
-            const start = new Date(Math.max(new Date(t.data_inicio).getTime(), startOfMonth.getTime()));
-            const end = new Date(Math.min(t.data_fim ? new Date(t.data_fim).getTime() : 9999999999999, endOfMonth.getTime()));
-            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-                diasOcupadosSet.add(d.toISOString().split('T')[0]);
-            }
-        });
-        return { name: sala.nome, dias: diasOcupadosSet.size, totalTurmas: turmasNaSala.length };
-    }).filter(s => s.dias > 0);
+    // 5. Cálculos Gerais (Somatório)
+    const andamentoPoolGlobal = colabsAnalise.filter(c => c.isAndamento);
+    const recrPoolGlobal = colabsAnalise.filter(c => !c.isAndamento);
 
     return {
         ativas: turmasFiltradas.filter(t => t.status === 'Em Andamento').length,
         finalizadas: turmasFiltradas.filter(t => t.status === 'Finalizada').length,
-        statsAndamento: getStatsForPool(andamentoPool),
-        statsRecrutamento: getStatsForPool(recrPool),
+        statsAndamento: getStats(andamentoPoolGlobal, numsTurmas),
+        statsRecrutamento: getStats(recrPoolGlobal, numsTurmas),
         rankingAndamento,
         rankingRecrutamento,
-        salaStats
+        salaStats: salas.map(sala => {
+            const turmasNaSala = turmasFiltradas.filter(t => t.sala === sala.nome);
+            const diasOcupadosSet = new Set<string>();
+            turmasNaSala.forEach(t => {
+                const start = new Date(Math.max(new Date(t.data_inicio).getTime(), startOfMonth.getTime()));
+                const end = new Date(Math.min(t.data_fim ? new Date(t.data_fim).getTime() : 9999999999999, endOfMonth.getTime()));
+                for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                    diasOcupadosSet.add(d.toISOString().split('T')[0]);
+                }
+            });
+            return { name: sala.nome, dias: diasOcupadosSet.size, totalTurmas: turmasNaSala.length };
+        }).filter(s => s.dias > 0)
     };
   }, [selectedMonth, selectedOp, selectedTurma, turmas, colabs, diario, salas]);
 
