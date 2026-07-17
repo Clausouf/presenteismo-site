@@ -13,7 +13,8 @@ export default function DashboardPage() {
   const [diario, setDiario] = useState<any[]>([]);
   const [salas, setSalas] = useState<any[]>([]);
   
-  const [activeTab, setActiveTab] = useState<'andamento' | 'recrutamento'>('andamento');
+  // Agora a tab é 'treinamento' ou 'recrutamento'
+  const [activeTab, setActiveTab] = useState<'treinamento' | 'recrutamento'>('treinamento');
   
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
@@ -56,28 +57,31 @@ export default function DashboardPage() {
 
     const numsTurmas = turmasFiltradas.map(t => t.numero_turma);
 
-    // LÓGICA DE CLASSIFICAÇÃO ESTRITA
+    // Lógica robusta de classificação
     const colabsAnalise = colabs
       .filter(c => numsTurmas.includes(c.numero_turma))
       .map(c => {
         const historicoGeral = diario.filter(d => d.colaborador_id === c.id);
         
-        // Verifica se existe QUALQUER registro de presença (normatizando termos)
+        // Verifica se existe presença (seja "Presente" ou "Presença")
         const tevePresenca = historicoGeral.some(d => 
-          ['Presente', 'Presença'].includes(d.tipo_registro)
+          d.tipo_registro && ['presente', 'presença'].includes(d.tipo_registro.toLowerCase())
         );
         
         return { 
           ...c, 
-          isAndamento: tevePresenca, // Se tem presença, é Andamento
+          isTreinamento: tevePresenca, // Se tem pelo menos 1 presença, é Treinamento
           temDesligamento: historicoGeral.some(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro))
         };
-      })
-      // Filtra estritamente pelo modo selecionado
-      .filter(c => activeTab === 'andamento' ? c.isAndamento : !c.isAndamento);
+      });
 
-    // Calculos baseados no pool filtrado
-    const poolIds = colabsAnalise.map(c => c.id);
+    // Filtra colaboradores com base na aba ativa (Treinamento ou Recrutamento)
+    const colabsFiltrados = colabsAnalise.filter(c => 
+      activeTab === 'treinamento' ? c.isTreinamento : !c.isTreinamento
+    );
+
+    // Calculos baseados APENAS no pool filtrado
+    const poolIds = colabsFiltrados.map(c => c.id);
     const logsPool = diario.filter(l => 
         poolIds.includes(l.colaborador_id) && 
         numsTurmas.includes(l.numero_turma) &&
@@ -87,14 +91,14 @@ export default function DashboardPage() {
     
     const totalRegistros = logsPool.filter(l => l.tipo_registro !== 'Folga').length;
     const totalFaltas = logsPool.filter(l => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(l.tipo_registro)).length;
-    const totalDeslig = colabsAnalise.filter(c => c.temDesligamento).length;
+    const totalDeslig = colabsFiltrados.filter(c => c.temDesligamento).length;
 
-    // Rankings por Operação (Isolados)
+    // Rankings isolados
     const opsDisponiveis = Array.from(new Set(turmasFiltradas.map(t => t.operacoes?.nome).filter(Boolean)));
     const ranking = opsDisponiveis.map(op => {
         const turmasOp = turmasFiltradas.filter(t => t.operacoes?.nome === op);
         const numsOp = turmasOp.map(t => t.numero_turma);
-        const poolOp = colabsAnalise.filter(c => numsOp.includes(c.numero_turma));
+        const poolOp = colabsFiltrados.filter(c => numsOp.includes(c.numero_turma));
         
         const logsOp = diario.filter(l => 
             poolOp.map(c => c.id).includes(l.colaborador_id) && 
@@ -117,7 +121,7 @@ export default function DashboardPage() {
         ativas: turmasFiltradas.filter(t => t.status === 'Em Andamento').length,
         finalizadas: turmasFiltradas.filter(t => t.status === 'Finalizada').length,
         abs: totalRegistros > 0 ? (totalFaltas / totalRegistros) * 100 : 0,
-        to: colabsAnalise.length > 0 ? (totalDeslig / colabsAnalise.length) * 100 : 0,
+        to: colabsFiltrados.length > 0 ? (totalDeslig / colabsFiltrados.length) * 100 : 0,
         ranking,
         salaStats: salas.map(sala => {
             const turmasNaSala = turmasFiltradas.filter(t => t.sala === sala.nome);
@@ -139,7 +143,7 @@ export default function DashboardPage() {
   return (
     <div className="p-6 space-y-6">
         <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-lg shadow gap-4">
-            <h1 className="text-xl font-bold">Dashboard {activeTab === 'andamento' ? 'Andamento' : 'Recrutamento'} - {new Date(selectedMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</h1>
+            <h1 className="text-xl font-bold">Dashboard {activeTab === 'treinamento' ? 'Treinamento' : 'Recrutamento'} - {new Date(selectedMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</h1>
             <div className="flex gap-2">
                 <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="border p-2 rounded" />
                 <select value={selectedOp} onChange={(e) => setSelectedOp(e.target.value)} className="border p-2 rounded">
@@ -153,8 +157,9 @@ export default function DashboardPage() {
             </div>
         </div>
 
+        {/* Abas renomeadas conforme solicitado */}
         <div className="flex gap-2 p-1 bg-gray-100 rounded-lg w-fit">
-            <button onClick={() => setActiveTab('andamento')} className={`px-4 py-2 rounded shadow ${activeTab === 'andamento' ? 'bg-white font-bold text-blue-600' : 'text-gray-500'}`}>Em Andamento</button>
+            <button onClick={() => setActiveTab('treinamento')} className={`px-4 py-2 rounded shadow ${activeTab === 'treinamento' ? 'bg-white font-bold text-blue-600' : 'text-gray-500'}`}>Treinamento</button>
             <button onClick={() => setActiveTab('recrutamento')} className={`px-4 py-2 rounded shadow ${activeTab === 'recrutamento' ? 'bg-white font-bold text-purple-600' : 'text-gray-500'}`}>Recrutamento</button>
         </div>
 
