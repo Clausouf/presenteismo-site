@@ -45,7 +45,7 @@ export default function DashboardPage() {
     const startOfMonth = new Date(year, month - 1, 1);
     const endOfMonth = new Date(year, month, 0, 23, 59, 59);
 
-    // 1. Identificar Turmas dentro do filtro selecionado
+    // 1. Filtragem das turmas pelos selects (mantendo o escopo visual original)
     let turmasFiltradas = turmas.filter(t => {
       const tStart = new Date(t.data_inicio);
       const tEnd = t.data_fim ? new Date(t.data_fim) : new Date(2099, 0, 1);
@@ -55,59 +55,56 @@ export default function DashboardPage() {
     if (selectedOp !== 'Todas') turmasFiltradas = turmasFiltradas.filter(t => t.operacoes?.nome === selectedOp);
     if (selectedTurma !== 'Todas') turmasFiltradas = turmasFiltradas.filter(t => t.numero_turma === selectedTurma);
 
-    const idsTurmasAtivas = turmasFiltradas.map(t => t.numero_turma);
+    const numsTurmas = turmasFiltradas.map(t => t.numero_turma);
 
-    // 2. Normalizador robusto
+    // 2. Classificação Orientada a Operador
     const normalizar = (str: string) => str?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
     const isPresente = (tipo: string) => ['presente', 'presenca'].includes(normalizar(tipo || ''));
 
-    // 3. Classificação INDIVIDUAL por colaborador
-    // O status é definido pelo histórico dele na turma específica, não da turma como um todo
-    const colabsComStatus = colabs.map(c => {
-        // Filtra logs deste colaborador especificamente na turma em que ele está alocado
-        const logsDoColaborador = diario.filter(d => d.colaborador_id === c.id && d.numero_turma === c.numero_turma);
-        const tevePresenca = logsDoColaborador.some(d => isPresente(d.tipo_registro));
+    const colabsClassificados = colabs
+      .filter(c => numsTurmas.includes(c.numero_turma)) // Filtra apenas colaboradores nessas turmas
+      .map(c => {
+        // Analisar SOMENTE o histórico deste operador na turma dele
+        const logsOperador = diario.filter(d => d.colaborador_id === c.id && d.numero_turma === c.numero_turma);
         
-        return {
-            ...c,
-            isTreinamento: tevePresenca,
-            temDesligamento: logsDoColaborador.some(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro))
-        };
-    });
+        const tevePresenca = logsOperador.some(l => isPresente(l.tipo_registro));
+        const teveDesligamento = logsOperador.some(l => ['Desistência', 'Desligamento a Pedido'].includes(l.tipo_registro));
 
-    // 4. Filtragem do Pool de Operadores (Aqui aplicamos o filtro da Turma e da Aba Ativa)
-    const colabsFiltrados = colabsComStatus.filter(c => 
-        idsTurmasAtivas.includes(c.numero_turma) && 
-        (activeTab === 'treinamento' ? c.isTreinamento : !c.isTreinamento)
+        return {
+          ...c,
+          isTreinamento: tevePresenca, // Se tem presença -> Treinamento
+          temDesligamento: teveDesligamento,
+          logs: logsOperador // Guardamos os logs para cálculo posterior
+        };
+      });
+
+    // 3. Separação em Pools (Aba Ativa)
+    const activePool = colabsClassificados.filter(c => 
+      activeTab === 'treinamento' ? c.isTreinamento : !c.isTreinamento
     );
 
-    // 5. Cálculos baseados apenas no pool filtrado
-    const poolIds = colabsFiltrados.map(c => c.id);
+    // 4. Cálculos baseados APENAS no Pool Ativo
+    const activeIds = activePool.map(c => c.id);
     
-    // Logs de presença do mês para esses operadores específicos
+    // Logs de presença do mês apenas para o Pool Ativo
     const logsPool = diario.filter(l => 
-        poolIds.includes(l.colaborador_id) && 
-        idsTurmasAtivas.includes(l.numero_turma) &&
+        activeIds.includes(l.colaborador_id) && 
+        numsTurmas.includes(l.numero_turma) &&
         new Date(l.data) >= startOfMonth && 
         new Date(l.data) <= endOfMonth
     );
     
     const totalRegistros = logsPool.filter(l => l.tipo_registro !== 'Folga').length;
     const totalFaltas = logsPool.filter(l => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(l.tipo_registro)).length;
-    const totalDeslig = colabsFiltrados.filter(c => c.temDesligamento).length;
+    const totalDeslig = activePool.filter(c => c.temDesligamento).length;
 
-    // 6. Ranking (Isolado por Aba e Operação)
+    // 5. Ranking por Operação (Utilizando o Pool Ativo)
     const opsDisponiveis = Array.from(new Set(turmasFiltradas.map(t => t.operacoes?.nome).filter(Boolean)));
     const ranking = opsDisponiveis.map(op => {
-        const turmasOp = turmasFiltradas.filter(t => t.operacoes?.nome === op);
-        const numsOp = turmasOp.map(t => t.numero_turma);
-        const poolOp = colabsFiltrados.filter(c => numsOp.includes(c.numero_turma));
+        const numsOp = turmasFiltradas.filter(t => t.operacoes?.nome === op).map(t => t.numero_turma);
+        const poolOp = activePool.filter(c => numsOp.includes(c.numero_turma));
         
-        const logsOp = diario.filter(l => 
-            poolOp.map(c => c.id).includes(l.colaborador_id) && 
-            numsOp.includes(l.numero_turma) &&
-            new Date(l.data) >= startOfMonth && new Date(l.data) <= endOfMonth
-        );
+        const logsOp = logsPool.filter(l => poolOp.map(p => p.id).includes(l.colaborador_id) && numsOp.includes(l.numero_turma));
         
         const regOp = logsOp.filter(l => l.tipo_registro !== 'Folga').length;
         const falOp = logsOp.filter(l => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(l.tipo_registro)).length;
@@ -124,7 +121,7 @@ export default function DashboardPage() {
         ativas: turmasFiltradas.filter(t => t.status === 'Em Andamento').length,
         finalizadas: turmasFiltradas.filter(t => t.status === 'Finalizada').length,
         abs: totalRegistros > 0 ? (totalFaltas / totalRegistros) * 100 : 0,
-        to: colabsFiltrados.length > 0 ? (totalDeslig / colabsFiltrados.length) * 100 : 0,
+        to: activePool.length > 0 ? (totalDeslig / activePool.length) * 100 : 0,
         ranking,
         salaStats: salas.map(sala => {
             const turmasNaSala = turmasFiltradas.filter(t => t.sala === sala.nome);
