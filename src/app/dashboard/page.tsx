@@ -45,7 +45,7 @@ export default function DashboardPage() {
     const startOfMonth = new Date(year, month - 1, 1);
     const endOfMonth = new Date(year, month, 0, 23, 59, 59);
 
-    // 1. Filtragem inicial de turmas
+    // 1. Identificar Turmas dentro do filtro selecionado
     let turmasFiltradas = turmas.filter(t => {
       const tStart = new Date(t.data_inicio);
       const tEnd = t.data_fim ? new Date(t.data_fim) : new Date(2099, 0, 1);
@@ -55,41 +55,39 @@ export default function DashboardPage() {
     if (selectedOp !== 'Todas') turmasFiltradas = turmasFiltradas.filter(t => t.operacoes?.nome === selectedOp);
     if (selectedTurma !== 'Todas') turmasFiltradas = turmasFiltradas.filter(t => t.numero_turma === selectedTurma);
 
-    const numsTurmas = turmasFiltradas.map(t => t.numero_turma);
+    const idsTurmasAtivas = turmasFiltradas.map(t => t.numero_turma);
 
-    // 2. Normalizador de strings para comparação robusta
+    // 2. Normalizador robusto
     const normalizar = (str: string) => str?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
     const isPresente = (tipo: string) => ['presente', 'presenca'].includes(normalizar(tipo || ''));
 
-    // 3. Classificação de Colaboradores (Escopo estrito da turma)
-    const colabsClassificados = colabs
-      .filter(c => numsTurmas.includes(c.numero_turma))
-      .map(c => {
-        // Busca registros SOMENTE da turma do colaborador
-        const logsTurma = diario.filter(d => d.colaborador_id === c.id && d.numero_turma === c.numero_turma);
+    // 3. Classificação INDIVIDUAL por colaborador
+    // O status é definido pelo histórico dele na turma específica, não da turma como um todo
+    const colabsComStatus = colabs.map(c => {
+        // Filtra logs deste colaborador especificamente na turma em que ele está alocado
+        const logsDoColaborador = diario.filter(d => d.colaborador_id === c.id && d.numero_turma === c.numero_turma);
+        const tevePresenca = logsDoColaborador.some(d => isPresente(d.tipo_registro));
         
-        const tevePresenca = logsTurma.some(d => isPresente(d.tipo_registro));
-        const temDesligamento = logsTurma.some(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro));
-        
-        return { 
-          ...c, 
-          isTreinamento: tevePresenca, // Se tem pelo menos uma presença na turma, é Treinamento
-          temDesligamento
+        return {
+            ...c,
+            isTreinamento: tevePresenca,
+            temDesligamento: logsDoColaborador.some(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro))
         };
-      });
+    });
 
-    // 4. Filtragem por Aba Ativa (Segregação Total)
-    const colabsFiltrados = colabsClassificados.filter(c => 
-      activeTab === 'treinamento' ? c.isTreinamento : !c.isTreinamento
+    // 4. Filtragem do Pool de Operadores (Aqui aplicamos o filtro da Turma e da Aba Ativa)
+    const colabsFiltrados = colabsComStatus.filter(c => 
+        idsTurmasAtivas.includes(c.numero_turma) && 
+        (activeTab === 'treinamento' ? c.isTreinamento : !c.isTreinamento)
     );
 
-    // 5. Cálculos (ABS e TO) baseados estritamente nos colabs filtrados
+    // 5. Cálculos baseados apenas no pool filtrado
     const poolIds = colabsFiltrados.map(c => c.id);
     
-    // Logs do mês, apenas para os colabs da aba selecionada, na turma correta
+    // Logs de presença do mês para esses operadores específicos
     const logsPool = diario.filter(l => 
         poolIds.includes(l.colaborador_id) && 
-        numsTurmas.includes(l.numero_turma) &&
+        idsTurmasAtivas.includes(l.numero_turma) &&
         new Date(l.data) >= startOfMonth && 
         new Date(l.data) <= endOfMonth
     );
@@ -98,7 +96,7 @@ export default function DashboardPage() {
     const totalFaltas = logsPool.filter(l => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(l.tipo_registro)).length;
     const totalDeslig = colabsFiltrados.filter(c => c.temDesligamento).length;
 
-    // 6. Ranking (Isolado por aba)
+    // 6. Ranking (Isolado por Aba e Operação)
     const opsDisponiveis = Array.from(new Set(turmasFiltradas.map(t => t.operacoes?.nome).filter(Boolean)));
     const ranking = opsDisponiveis.map(op => {
         const turmasOp = turmasFiltradas.filter(t => t.operacoes?.nome === op);
