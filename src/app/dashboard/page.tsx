@@ -13,7 +13,6 @@ export default function DashboardPage() {
   const [diario, setDiario] = useState<any[]>([]);
   const [salas, setSalas] = useState<any[]>([]);
   
-  // Tabs: 'andamento' ou 'recrutamento'
   const [activeTab, setActiveTab] = useState<'andamento' | 'recrutamento'>('andamento');
   
   const [selectedMonth, setSelectedMonth] = useState(() => {
@@ -46,7 +45,6 @@ export default function DashboardPage() {
     const startOfMonth = new Date(year, month - 1, 1);
     const endOfMonth = new Date(year, month, 0, 23, 59, 59);
 
-    // 1. Filtrar escopo de turmas
     let turmasFiltradas = turmas.filter(t => {
       const tStart = new Date(t.data_inicio);
       const tEnd = t.data_fim ? new Date(t.data_fim) : new Date(2099, 0, 1);
@@ -58,22 +56,27 @@ export default function DashboardPage() {
 
     const numsTurmas = turmasFiltradas.map(t => t.numero_turma);
 
-    // 2. Classificação Baseada na Tab Ativa
+    // LÓGICA DE CLASSIFICAÇÃO ESTRITA
     const colabsAnalise = colabs
       .filter(c => numsTurmas.includes(c.numero_turma))
       .map(c => {
         const historicoGeral = diario.filter(d => d.colaborador_id === c.id);
-        const tevePresenca = historicoGeral.some(d => d.tipo_registro === 'Presente');
+        
+        // Verifica se existe QUALQUER registro de presença (normatizando termos)
+        const tevePresenca = historicoGeral.some(d => 
+          ['Presente', 'Presença'].includes(d.tipo_registro)
+        );
         
         return { 
           ...c, 
-          isAndamento: tevePresenca,
+          isAndamento: tevePresenca, // Se tem presença, é Andamento
           temDesligamento: historicoGeral.some(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro))
         };
       })
+      // Filtra estritamente pelo modo selecionado
       .filter(c => activeTab === 'andamento' ? c.isAndamento : !c.isAndamento);
 
-    // 3. Calculos (focados apenas no pool filtrado)
+    // Calculos baseados no pool filtrado
     const poolIds = colabsAnalise.map(c => c.id);
     const logsPool = diario.filter(l => 
         poolIds.includes(l.colaborador_id) && 
@@ -86,7 +89,7 @@ export default function DashboardPage() {
     const totalFaltas = logsPool.filter(l => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(l.tipo_registro)).length;
     const totalDeslig = colabsAnalise.filter(c => c.temDesligamento).length;
 
-    // 4. Rankings por Operação
+    // Rankings por Operação (Isolados)
     const opsDisponiveis = Array.from(new Set(turmasFiltradas.map(t => t.operacoes?.nome).filter(Boolean)));
     const ranking = opsDisponiveis.map(op => {
         const turmasOp = turmasFiltradas.filter(t => t.operacoes?.nome === op);
@@ -150,10 +153,9 @@ export default function DashboardPage() {
             </div>
         </div>
 
-        {/* Toggle de Abas */}
         <div className="flex gap-2 p-1 bg-gray-100 rounded-lg w-fit">
-            <button onClick={() => setActiveTab('andamento')} className={`px-4 py-2 rounded shadow ${activeTab === 'andamento' ? 'bg-white font-bold' : 'text-gray-500'}`}>Em Andamento</button>
-            <button onClick={() => setActiveTab('recrutamento')} className={`px-4 py-2 rounded shadow ${activeTab === 'recrutamento' ? 'bg-white font-bold' : 'text-gray-500'}`}>Recrutamento</button>
+            <button onClick={() => setActiveTab('andamento')} className={`px-4 py-2 rounded shadow ${activeTab === 'andamento' ? 'bg-white font-bold text-blue-600' : 'text-gray-500'}`}>Em Andamento</button>
+            <button onClick={() => setActiveTab('recrutamento')} className={`px-4 py-2 rounded shadow ${activeTab === 'recrutamento' ? 'bg-white font-bold text-purple-600' : 'text-gray-500'}`}>Recrutamento</button>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
