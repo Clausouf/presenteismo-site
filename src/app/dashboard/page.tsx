@@ -5,21 +5,19 @@ import { supabase } from '@/lib/supabase';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 
 // --- FUNÇÃO EXCLUSIVA DE CLASSIFICAÇÃO ---
-// Esta função é o único ponto de decisão do sistema.
 function classificarOperadores(colaboradores: any[], diario: any[]) {
   const pools = {
     treinamento: [] as any[],
     recrutamento: [] as any[]
   };
 
+  const normalizar = (str: string) => str?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
+
   colaboradores.forEach((colab) => {
-    // Filtra registros apenas do colaborador na turma específica dele
     const logsDoOperador = diario.filter(
       (d) => d.colaborador_id === colab.id && d.numero_turma === colab.numero_turma
     );
 
-    // Regra: Teve pelo menos uma presença?
-    const normalizar = (str: string) => str?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
     const tevePresenca = logsDoOperador.some(l => ['presente', 'presenca'].includes(normalizar(l.tipo_registro || '')));
 
     if (tevePresenca) {
@@ -72,13 +70,20 @@ export default function DashboardPage() {
     const startOfMonth = new Date(year, month - 1, 1);
     const endOfMonth = new Date(year, month, 0, 23, 59, 59);
 
-    // 1. Obter os pools classificados pela função única
-    const { treinamento, recrutamento } = classificarOperadores(colabs, diario);
+    const normalizar = (str: string) => str?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
+    const isFalta = (tipo: string) => ['falta injustificada', 'falta integracao', 'atestado'].includes(normalizar(tipo || ''));
     
-    // 2. Selecionar o pool da aba ativa
+    // Reforço da validação de TO: cobrindo todas as variações possíveis
+    const isDeslig = (tipo: string) => {
+        const t = normalizar(tipo || '');
+        return ['desistencia', 'desligamento', 'desligamento a pedido'].some(palavra => t.includes(palavra));
+    };
+
+    // 1. Obter os pools classificados
+    const { treinamento, recrutamento } = classificarOperadores(colabs, diario);
     const poolAtivo = activeTab === 'treinamento' ? treinamento : recrutamento;
 
-    // 3. Aplicar Filtros (Mês, Operação, Turma) APENAS no pool ativo
+    // 2. Aplicar Filtros (Mês, Operação, Turma) APENAS no pool ativo
     const filteredPool = poolAtivo.filter(c => {
         const turma = turmas.find(t => t.numero_turma === c.numero_turma);
         if (!turma) return false;
@@ -91,20 +96,20 @@ export default function DashboardPage() {
 
     const activeIds = filteredPool.map(c => c.id);
 
-    // 4. Buscar Logs do Mês apenas para os operadores do Pool Ativo
+    // 3. Buscar Logs do Mês apenas para os operadores do Pool Ativo
     const logsDoMes = diario.filter(l => 
         activeIds.includes(l.colaborador_id) &&
         new Date(l.data) >= startOfMonth && 
         new Date(l.data) <= endOfMonth
     );
 
-    // 5. Cálculos (ABS, TO, Ranking)
-    const isFalta = (tipo: string) => ['falta injustificada', 'falta integracao', 'atestado'].includes(tipo?.toLowerCase());
-    const isDeslig = (tipo: string) => ['desistencia', 'desligamento a pedido'].includes(tipo);
-
+    // 4. Cálculos
     const totalRegistros = logsDoMes.filter(l => l.tipo_registro !== 'Folga').length;
     const totalFaltas = logsDoMes.filter(l => isFalta(l.tipo_registro)).length;
-    const totalDesligados = logsDoMes.filter(l => isDeslig(l.tipo_registro)).length;
+    
+    // Identifica operadores que tiveram algum evento de desligamento no mês
+    const idsComDesligamentoNoMes = new Set(logsDoMes.filter(l => isDeslig(l.tipo_registro)).map(l => l.colaborador_id));
+    const totalDesligados = idsComDesligamentoNoMes.size;
 
     // Ranking
     const opsAtivas = [...new Set(turmas.map(t => t.operacoes?.nome).filter(Boolean))];
@@ -115,7 +120,7 @@ export default function DashboardPage() {
         
         const regOp = logsOp.filter(l => l.tipo_registro !== 'Folga').length;
         const falOp = logsOp.filter(l => isFalta(l.tipo_registro)).length;
-        const desOp = logsOp.filter(l => isDeslig(l.tipo_registro)).length;
+        const desOp = new Set(logsOp.filter(l => isDeslig(l.tipo_registro)).map(l => l.colaborador_id)).size;
 
         return { 
             nome: op, 
@@ -124,26 +129,34 @@ export default function DashboardPage() {
         };
     });
 
+    // 5. Ocupação de Salas (Revertida para o cálculo original detalhado)
+    const salaStats = salas.map(sala => {
+        const turmasNaSala = turmas.filter(t => t.sala === sala.nome && (selectedOp === 'Todas' || t.operacoes?.nome === selectedOp));
+        const diasOcupadosSet = new Set<string>();
+        turmasNaSala.forEach(t => {
+            const start = new Date(Math.max(new Date(t.data_inicio).getTime(), startOfMonth.getTime()));
+            const end = new Date(Math.min(t.data_fim ? new Date(t.data_fim).getTime() : 9999999999999, endOfMonth.getTime()));
+            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                diasOcupadosSet.add(d.toISOString().split('T')[0]);
+            }
+        });
+        return { name: sala.nome, dias: diasOcupadosSet.size, totalTurmas: turmasNaSala.length };
+    }).filter(s => s.dias > 0);
+
     return {
         ativas: turmas.filter(t => t.status === 'Em Andamento').length,
         finalizadas: turmas.filter(t => t.status === 'Finalizada').length,
         abs: totalRegistros > 0 ? (totalFaltas / totalRegistros) * 100 : 0,
         to: filteredPool.length > 0 ? (totalDesligados / filteredPool.length) * 100 : 0,
         ranking,
-        salaStats: salas.map(sala => ({
-            name: sala.nome,
-            dias: 0, // Simplified for brevity, same logic as before
-            totalTurmas: turmas.filter(t => t.sala === sala.nome).length
-        }))
+        salaStats
     };
   }, [selectedMonth, selectedOp, selectedTurma, activeTab, turmas, colabs, diario, salas]);
 
-  // UI Components (Remain strictly unchanged)
   if (loading) return <div className="p-10 text-center">Carregando...</div>;
 
   return (
     <div className="p-6 space-y-6">
-        {/* Header e Filtros */}
         <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-lg shadow gap-4">
             <h1 className="text-xl font-bold">Dashboard {activeTab === 'treinamento' ? 'Treinamento' : 'Recrutamento'} - {new Date(selectedMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</h1>
             <div className="flex gap-2">
@@ -159,13 +172,11 @@ export default function DashboardPage() {
             </div>
         </div>
 
-        {/* Abas */}
         <div className="flex gap-2 p-1 bg-gray-100 rounded-lg w-fit">
             <button onClick={() => setActiveTab('treinamento')} className={`px-4 py-2 rounded shadow ${activeTab === 'treinamento' ? 'bg-white font-bold text-blue-600' : 'text-gray-500'}`}>Treinamento</button>
             <button onClick={() => setActiveTab('recrutamento')} className={`px-4 py-2 rounded shadow ${activeTab === 'recrutamento' ? 'bg-white font-bold text-purple-600' : 'text-gray-500'}`}>Recrutamento</button>
         </div>
 
-        {/* Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card title="Ativas (Mês)" value={dashboardData.ativas} color="border-blue-500" />
             <Card title="Finaliz. (Mês)" value={dashboardData.finalizadas} color="border-green-500" />
@@ -173,19 +184,28 @@ export default function DashboardPage() {
             <Card title="TO Geral" value={`${dashboardData.to.toFixed(1)}%`} color="border-red-500" />
         </div>
 
-        {/* Gráficos e Ranking */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white p-4 rounded shadow border border-slate-200">
                 <h2 className="font-bold mb-4">Ocupação de Salas</h2>
-                <div className="h-40">
-                     <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                            <Pie data={dashboardData.salaStats} dataKey="totalTurmas" nameKey="name" cx="50%" cy="50%" outerRadius={50} label>
-                                {dashboardData.salaStats.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                            </Pie>
-                            <Tooltip />
-                        </PieChart>
-                    </ResponsiveContainer>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                    <div className="h-40">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                                <Pie data={dashboardData.salaStats} dataKey="dias" nameKey="name" cx="50%" cy="50%" outerRadius={50} label>
+                                    {dashboardData.salaStats.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                                </Pie>
+                                <Tooltip />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    </div>
+                    <div className="space-y-1">
+                        {dashboardData.salaStats.map((s, i) => (
+                            <div key={i} className="flex justify-between p-1 bg-slate-50 rounded border text-[10px]">
+                                <span className="font-bold truncate w-24">{s.name}</span>
+                                <span>{s.dias} dias | {s.totalTurmas} turmas</span>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             </div>
 
