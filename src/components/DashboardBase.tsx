@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 
-// Lógica pura de classificação (imutável)
 function obterClassificacao(colaboradores: any[], diario: any[]) {
   const normalizar = (str: string) => str?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
   const termosPresenca = ['presente', 'presenca', 'acompanhamento'];
@@ -88,7 +88,6 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
     const faltasCount = logsDoMes.filter(l => isFalta(l.tipo_registro)).length;
     const desligadosCount = new Set(logsDoMes.filter(l => isDeslig(l.tipo_registro)).map(l => l.colaborador_id)).size;
 
-    // Ranking e Salas
     const opsAtivas = [...new Set(turmas.map(t => t.operacoes?.nome).filter(Boolean))];
     const ranking = opsAtivas.map(op => {
         const poolDaOp = filteredPool.filter(c => turmas.find(t => t.numero_turma === c.numero_turma)?.operacoes?.nome === op);
@@ -125,6 +124,12 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
 
   return (
     <div className="p-6 space-y-6">
+        {/* Switcher de Dashboard */}
+        <div className="flex gap-2 mb-6">
+            <Link href="/dashboard/treinamento" className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${tipo === 'treinamento' ? 'bg-emerald-600 text-white shadow-lg' : 'bg-white text-emerald-600 border border-emerald-200'}`}>Treinamento</Link>
+            <Link href="/dashboard/recrutamento" className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${tipo === 'recrutamento' ? 'bg-purple-600 text-white shadow-lg' : 'bg-white text-purple-600 border border-purple-200'}`}>Recrutamento</Link>
+        </div>
+
         <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-lg shadow gap-4">
             <h1 className="text-xl font-bold capitalize">Dashboard {tipo}</h1>
             <div className="flex gap-2">
@@ -132,11 +137,43 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
                 <select onChange={(e) => setSelectedOp(e.target.value)} className="border p-2 rounded"><option value="Todas">Todas Operações</option>{[...new Set(turmas.map(t => t.operacoes?.nome).filter(Boolean))].map(op => <option key={op} value={op}>{op}</option>)}</select>
             </div>
         </div>
+
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Card title="Ativas" value={data?.ativas || 0} color="border-blue-500" />
+            <Card title="Finalizadas" value={data?.finalizadas || 0} color="border-green-500" />
             <Card title="ABS Geral" value={`${data?.abs.toFixed(1)}%`} color="border-yellow-500" />
             <Card title="TO Geral" value={`${data?.to.toFixed(1)}%`} color="border-red-500" />
         </div>
-        {/* ... Adicione o resto dos gráficos usando 'data' ... */}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-white p-4 rounded shadow border border-slate-200">
+                <h2 className="font-bold mb-4">Ocupação de Salas</h2>
+                <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                            <Pie data={data?.salaStats} dataKey="dias" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
+                                {data?.salaStats.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                            </Pie>
+                            <Tooltip />
+                        </PieChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+
+            <div className="bg-white p-4 rounded shadow border border-slate-200">
+                <h2 className="font-bold mb-4">Ranking por Operação</h2>
+                <div className="space-y-2">
+                    <div className="flex justify-between text-xs font-bold text-gray-400 border-b pb-2"><span>OPERAÇÃO</span><span>ABS</span><span>TO</span></div>
+                    {data?.ranking.map((o, i) => (
+                        <div key={i} className="flex justify-between py-2 border-b text-sm">
+                            <span className="font-medium">{o.nome}</span>
+                            <span>{o.abs.toFixed(0)}%</span>
+                            <span className="font-bold text-red-600">{o.to.toFixed(0)}%</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
     </div>
   );
 }
