@@ -45,7 +45,7 @@ export default function DashboardPage() {
     const startOfMonth = new Date(year, month - 1, 1);
     const endOfMonth = new Date(year, month, 0, 23, 59, 59);
 
-    // 1. Filtragem das turmas (Base para o filtro de operadores)
+    // 1. Filtragem das turmas
     let turmasFiltradas = turmas.filter(t => {
       const tStart = new Date(t.data_inicio);
       const tEnd = t.data_fim ? new Date(t.data_fim) : new Date(2099, 0, 1);
@@ -55,59 +55,61 @@ export default function DashboardPage() {
     if (selectedOp !== 'Todas') turmasFiltradas = turmasFiltradas.filter(t => t.operacoes?.nome === selectedOp);
     if (selectedTurma !== 'Todas') turmasFiltradas = turmasFiltradas.filter(t => t.numero_turma === selectedTurma);
 
-    const numsTurmasAtivas = turmasFiltradas.map(t => t.numero_turma);
+    const numsTurmas = turmasFiltradas.map(t => t.numero_turma);
 
-    // 2. Classificação INDIVIDUAL por operador (Operador + Turma)
+    // 2. Classificação Estrita por Operador
     const normalizar = (str: string) => str?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
     const isPresenca = (tipo: string) => ['presente', 'presenca'].includes(normalizar(tipo || ''));
 
-    const operadoresClassificados = colabs
-      .filter(c => numsTurmasAtivas.includes(c.numero_turma)) // Apenas operadores nestas turmas
-      .map(c => {
-        // Analisa histórico apenas do operador nesta turma
-        const logsDoOperador = diario.filter(d => d.colaborador_id === c.id && d.numero_turma === c.numero_turma);
-        
-        // Regra de Ouro: Possui pelo menos UMA presença na turma?
-        const temPresenca = logsDoOperador.some(l => isPresenca(l.tipo_registro));
-        
-        return {
-          ...c,
-          classificacao: temPresenca ? 'treinamento' : 'recrutamento',
-          temDesligamento: logsDoOperador.some(l => ['Desistência', 'Desligamento a Pedido'].includes(l.tipo_registro))
-        };
-      });
+    // Criamos dois grupos distintos e imutáveis
+    const poolTreinamento: any[] = [];
+    const poolRecrutamento: any[] = [];
 
-    // 3. Separação Estrita (Pools)
-    const poolTreinamento = operadoresClassificados.filter(c => c.classificacao === 'treinamento');
-    const poolRecrutamento = operadoresClassificados.filter(c => c.classificacao === 'recrutamento');
-    
-    // Seleciona o pool ativo para os cálculos
-    const poolAtivo = activeTab === 'treinamento' ? poolTreinamento : poolRecrutamento;
-    const idsPoolAtivo = poolAtivo.map(c => c.id);
+    colabs.filter(c => numsTurmas.includes(c.numero_turma)).forEach(c => {
+        const logsOperador = diario.filter(d => d.colaborador_id === c.id && d.numero_turma === c.numero_turma);
+        
+        // Regra de ouro: se tem PRESENÇA > 0, é Treinamento. Se 0, é Recrutamento.
+        const tevePresenca = logsOperador.some(l => isPresenca(l.tipo_registro));
+        const teveDesligamento = logsOperador.some(l => ['Desistência', 'Desligamento a Pedido'].includes(l.tipo_registro));
 
-    // 4. Cálculo de Métricas (ABS e TO) usando APENAS os registros do pool ativo
-    const logsDoPool = diario.filter(l => 
+        const operarioClassificado = { ...c, teveDesligamento };
+
+        if (tevePresenca) {
+            poolTreinamento.push(operarioClassificado);
+        } else {
+            poolRecrutamento.push(operarioClassificado);
+        }
+    });
+
+    // 3. Define qual pool vamos usar para os cálculos desta aba
+    const activePool = activeTab === 'treinamento' ? poolTreinamento : poolRecrutamento;
+    const idsPoolAtivo = activePool.map(c => c.id);
+
+    // 4. Cálculos baseados APENAS no pool ativo
+    const logsPool = diario.filter(l => 
         idsPoolAtivo.includes(l.colaborador_id) && 
-        numsTurmasAtivas.includes(l.numero_turma) &&
+        numsTurmas.includes(l.numero_turma) &&
         new Date(l.data) >= startOfMonth && 
         new Date(l.data) <= endOfMonth
     );
+    
+    const totalRegistros = logsPool.filter(l => l.tipo_registro !== 'Folga').length;
+    const totalFaltas = logsPool.filter(l => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(l.tipo_registro)).length;
+    
+    // O TO é calculado baseado na quantidade de desligamentos encontrados APENAS dentro do pool da aba ativa
+    const totalDeslig = activePool.filter(c => c.teveDesligamento).length;
 
-    const totalRegistros = logsDoPool.filter(l => l.tipo_registro !== 'Folga').length;
-    const totalFaltas = logsDoPool.filter(l => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(l.tipo_registro)).length;
-    const totalDeslig = poolAtivo.filter(c => c.temDesligamento).length;
-
-    // 5. Ranking (Isolado por Aba)
+    // 5. Ranking por Operação (Isolado por Aba)
     const opsDisponiveis = Array.from(new Set(turmasFiltradas.map(t => t.operacoes?.nome).filter(Boolean)));
     const ranking = opsDisponiveis.map(op => {
         const numsOp = turmasFiltradas.filter(t => t.operacoes?.nome === op).map(t => t.numero_turma);
-        const poolOp = poolAtivo.filter(c => numsOp.includes(c.numero_turma));
+        const poolOp = activePool.filter(c => numsOp.includes(c.numero_turma));
         
-        const logsOp = logsDoPool.filter(l => poolOp.map(p => p.id).includes(l.colaborador_id) && numsOp.includes(l.numero_turma));
+        const logsOp = logsPool.filter(l => poolOp.map(p => p.id).includes(l.colaborador_id) && numsOp.includes(l.numero_turma));
         
         const regOp = logsOp.filter(l => l.tipo_registro !== 'Folga').length;
         const falOp = logsOp.filter(l => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(l.tipo_registro)).length;
-        const desOp = poolOp.filter(c => c.temDesligamento).length;
+        const desOp = poolOp.filter(c => c.teveDesligamento).length;
 
         return { 
             nome: op, 
@@ -120,7 +122,7 @@ export default function DashboardPage() {
         ativas: turmasFiltradas.filter(t => t.status === 'Em Andamento').length,
         finalizadas: turmasFiltradas.filter(t => t.status === 'Finalizada').length,
         abs: totalRegistros > 0 ? (totalFaltas / totalRegistros) * 100 : 0,
-        to: poolAtivo.length > 0 ? (totalDeslig / poolAtivo.length) * 100 : 0,
+        to: activePool.length > 0 ? (totalDeslig / activePool.length) * 100 : 0,
         ranking,
         salaStats: salas.map(sala => {
             const turmasNaSala = turmasFiltradas.filter(t => t.sala === sala.nome);
