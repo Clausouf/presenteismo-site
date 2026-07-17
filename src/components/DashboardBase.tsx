@@ -45,75 +45,54 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
     const [year, month] = selectedMonth.split('-').map(Number);
     const startOfMonth = new Date(year, month - 1, 1);
     const endOfMonth = new Date(year, month, 0, 23, 59, 59);
-
     const normalizar = (s: string) => s?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
-    
-    // Filtro base de UI
-    const basePool = colabs.filter(c => {
+
+    // 1. Identificar quem pertence a qual pool
+    const poolFinal = colabs.filter(c => {
+        const logs = diario.filter(l => l.colaborador_id === c.id && new Date(l.data) >= startOfMonth && new Date(l.data) <= endOfMonth);
+        const types = logs.map(l => normalizar(l.tipo_registro));
+        const hasPresenca = types.some(t => ['presente', 'presenca', 'acompanhamento'].includes(t));
+        
+        // Filtro de UI básico
         const turma = turmas.find(t => t.numero_turma === c.numero_turma);
         if (!turma) return false;
         const opMatch = selectedOp === 'Todas' || turma.operacoes?.nome === selectedOp;
         const turmaMatch = selectedTurma === 'Todas' || c.numero_turma === selectedTurma;
-        return opMatch && turmaMatch;
-    });
+        
+        if (!opMatch || !turmaMatch) return false;
 
-    // Classificação por Tipo (Recrutamento vs Treinamento)
-    const poolFinal = basePool.filter(c => {
-        const logs = diario.filter(l => l.colaborador_id === c.id && new Date(l.data) >= startOfMonth && new Date(l.data) <= endOfMonth);
-        const types = logs.map(l => normalizar(l.tipo_registro));
-        const hasPresenca = types.some(t => ['presente', 'presenca', 'acompanhamento'].includes(t));
         return tipo === 'treinamento' ? hasPresenca : !hasPresenca;
     });
 
-    // Função de cálculo estrito para cada colaborador
-    const calcularMetricas = (colabId: string) => {
-        const logs = diario.filter(l => l.colaborador_id === colabId && new Date(l.data) >= startOfMonth && new Date(l.data) <= endOfMonth);
+    // 2. Calcular Métricas estritas por colaborador
+    let absCount = 0;
+    let toCount = 0;
+
+    poolFinal.forEach(c => {
+        const logs = diario.filter(l => l.colaborador_id === c.id && new Date(l.data) >= startOfMonth && new Date(l.data) <= endOfMonth);
         const types = logs.map(l => normalizar(l.tipo_registro));
 
         if (tipo === 'recrutamento') {
-            const hasFaltaInt = types.includes('falta integracao');
-            const hasFaltaInj = types.includes('falta injustificada');
+            const hasInt = types.includes('falta integracao');
+            const hasInj = types.includes('falta injustificada');
             const hasDeslig = types.some(t => ['desistencia', 'desligamento', 'desligamento a pedido'].includes(t));
-            const allowedTypes = ['falta integracao', 'falta injustificada', 'desistencia', 'desligamento', 'desligamento a pedido'];
-            const hasUnknown = types.some(t => !allowedTypes.includes(t));
-
-            const qualifiesForABS = hasFaltaInt && hasFaltaInj && !hasUnknown;
-            const qualifiesForTO = qualifiesForABS && hasDeslig;
-            return { abs: qualifiesForABS, to: qualifiesForTO };
+            const hasOther = types.some(t => !['falta integracao', 'falta injustificada', 'desistencia', 'desligamento', 'desligamento a pedido'].includes(t));
+            
+            // ABS: Precisa ter as duas faltas E nada mais estranho
+            if (hasInt && hasInj && !hasOther) {
+                absCount++;
+                if (hasDeslig) toCount++; // TO: Precisa ter a base de ABS + Deslig
+            }
         } else {
-            // Treinamento: Tem presença é o critério.
-            // ABS: Teve falta (qualquer uma). TO: Teve desligamento.
-            const hasFalta = types.some(t => t.includes('falta'));
-            const hasDeslig = types.some(t => ['desistencia', 'desligamento', 'desligamento a pedido'].includes(t));
-            return { abs: hasFalta, to: hasDeslig };
+            // Treinamento: OBRIGATÓRIO ter presença (já filtrado no pool), então olha apenas faltas/deslig
+            if (types.some(t => t.includes('falta'))) absCount++;
+            if (types.some(t => ['desistencia', 'desligamento', 'desligamento a pedido'].includes(t))) toCount++;
         }
-    };
-
-    let absCount = 0;
-    let toCount = 0;
-    poolFinal.forEach(c => {
-        const m = calcularMetricas(c.id);
-        if (m.abs) absCount++;
-        if (m.to) toCount++;
     });
 
-    // Ranking por Operação
+    // Ranking e Salas
     const opsAtivas = [...new Set(turmas.map(t => t.operacoes?.nome).filter(Boolean))];
-    const ranking = opsAtivas.map(op => {
-        const poolOp = poolFinal.filter(c => turmas.find(t => t.numero_turma === c.numero_turma)?.operacoes?.nome === op);
-        let absOp = 0; let toOp = 0;
-        poolOp.forEach(c => {
-            const m = calcularMetricas(c.id);
-            if (m.abs) absOp++;
-            if (m.to) toOp++;
-        });
-        return { 
-            nome: op, 
-            abs: poolOp.length > 0 ? (absOp / poolOp.length) * 100 : 0, 
-            to: poolOp.length > 0 ? (toOp / poolOp.length) * 100 : 0 
-        };
-    });
-    
+    const ranking = opsAtivas.map(op => ({ nome: op, abs: (absCount/Math.max(1, poolFinal.length))*100, to: (toCount/Math.max(1, poolFinal.length))*100 }));
     const salaStats = salas.map(sala => {
         const turmasNaSala = turmas.filter(t => t.sala === sala.nome && (selectedOp === 'Todas' || t.operacoes?.nome === selectedOp));
         return { name: sala.nome, dias: turmasNaSala.length > 0 ? 1 : 0, ops: [...new Set(turmasNaSala.map(t => t.operacoes?.nome).filter(Boolean))] };
@@ -132,81 +111,50 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
   if (loading) return <div className="p-10 text-center">Carregando...</div>;
 
   return (
-    <div className="p-6 space-y-6">
-        <div className="flex gap-2 mb-6">
-            <Link href="/dashboard/treinamento" className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${tipo === 'treinamento' ? 'bg-emerald-600 text-white shadow-lg' : 'bg-white text-emerald-600 border border-emerald-200'}`}>Treinamento</Link>
-            <Link href="/dashboard/recrutamento" className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${tipo === 'recrutamento' ? 'bg-purple-600 text-white shadow-lg' : 'bg-white text-purple-600 border border-purple-200'}`}>Recrutamento</Link>
+    <div className="p-4 space-y-4">
+        {/* Switcher & Filtros */}
+        <div className="flex gap-2">
+            <Link href="/dashboard/treinamento" className={`px-4 py-2 rounded-lg text-sm font-bold ${tipo === 'treinamento' ? 'bg-emerald-600 text-white' : 'bg-white text-emerald-600 border'}`}>Treinamento</Link>
+            <Link href="/dashboard/recrutamento" className={`px-4 py-2 rounded-lg text-sm font-bold ${tipo === 'recrutamento' ? 'bg-purple-600 text-white' : 'bg-white text-purple-600 border'}`}>Recrutamento</Link>
         </div>
 
-        <div className="flex flex-wrap items-center bg-white p-4 rounded-lg shadow gap-4">
-            <h1 className="text-xl font-bold capitalize mr-auto">Dashboard {tipo}</h1>
-            <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="border p-2 rounded" />
-            <select onChange={(e) => setSelectedOp(e.target.value)} className="border p-2 rounded"><option value="Todas">Todas Operações</option>{[...new Set(turmas.map(t => t.operacoes?.nome).filter(Boolean))].map(op => <option key={op} value={op}>{op}</option>)}</select>
-            <select onChange={(e) => setSelectedTurma(e.target.value)} className="border p-2 rounded"><option value="Todas">Todas Turmas</option>{[...new Set(turmas.map(t => t.numero_turma).filter(Boolean))].map(num => <option key={num} value={num}>{num}</option>)}</select>
+        <div className="flex flex-wrap items-center bg-white p-3 rounded-lg shadow gap-3">
+            <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="border p-1.5 text-sm rounded" />
+            <select onChange={(e) => setSelectedOp(e.target.value)} className="border p-1.5 text-sm rounded"><option value="Todas">Operações</option>{[...new Set(turmas.map(t => t.operacoes?.nome).filter(Boolean))].map(op => <option key={op} value={op}>{op}</option>)}</select>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Card title="Ativas" value={data?.ativas || 0} color="border-blue-500" />
-            <Card title="Finalizadas" value={data?.finalizadas || 0} color="border-green-500" />
-            <Card title="ABS Geral" value={`${(data?.abs || 0).toFixed(1)}%`} color="border-yellow-500" />
-            <Card title="TO Geral" value={`${(data?.to || 0).toFixed(1)}%`} color="border-red-500" />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-white p-3 rounded shadow border-l-4 border-blue-500"><p className="text-[10px] font-bold text-gray-500">ATIVAS</p><p className="text-lg font-bold">{data?.ativas || 0}</p></div>
+            <div className="bg-white p-3 rounded shadow border-l-4 border-yellow-500"><p className="text-[10px] font-bold text-gray-500">ABS</p><p className="text-lg font-bold">{data?.abs.toFixed(1)}%</p></div>
+            <div className="bg-white p-3 rounded shadow border-l-4 border-red-500"><p className="text-[10px] font-bold text-gray-500">TO</p><p className="text-lg font-bold">{data?.to.toFixed(1)}%</p></div>
         </div>
 
-        {/* Ocupação (Gráfico + Tabela) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-white p-4 rounded shadow border border-slate-200">
-                <h2 className="font-bold mb-4">Ocupação de Salas</h2>
-                <div className="h-64">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Ocupação Compacta */}
+            <div className="bg-white p-3 rounded shadow">
+                <h2 className="font-bold text-sm mb-2">Ocupação de Salas</h2>
+                <div className="h-48">
                     <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                            <Pie data={data?.salaStats} dataKey="dias" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
-                                {data?.salaStats.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                            </Pie>
-                            <Tooltip />
-                        </PieChart>
+                        <PieChart><Pie data={data?.salaStats} dataKey="dias" nameKey="name" cx="50%" cy="50%" outerRadius={60} label>{data?.salaStats.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}</Pie><Tooltip /></PieChart>
                     </ResponsiveContainer>
                 </div>
             </div>
 
-            <div className="bg-white p-4 rounded shadow border border-slate-200">
-                <h2 className="font-bold mb-4">Detalhes de Ocupação</h2>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left">
-                        <thead className="text-xs text-gray-500 uppercase border-b">
-                            <tr><th className="py-2">Sala</th><th className="py-2">Dias</th><th className="py-2">Operações</th></tr>
-                        </thead>
-                        <tbody>
-                            {data?.salaStats.map((s, i) => (
-                                <tr key={i} className="border-b last:border-0">
-                                    <td className="py-3 font-medium">{s.name}</td>
-                                    <td className="py-3">{s.dias}</td>
-                                    <td className="py-3 text-gray-600">{s.ops.join(', ') || '-'}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+            <div className="bg-white p-3 rounded shadow overflow-hidden">
+                <h2 className="font-bold text-sm mb-2">Detalhes</h2>
+                <table className="w-full text-xs text-left">
+                    <thead><tr className="border-b"><th className="py-1">Sala</th><th className="py-1">Op</th></tr></thead>
+                    <tbody>{data?.salaStats.map((s, i) => <tr key={i} className="border-b"><td className="py-1.5 font-medium">{s.name}</td><td className="py-1.5 truncate">{s.ops.join(', ')}</td></tr>)}</tbody>
+                </table>
             </div>
         </div>
 
-        {/* Ranking por Operação */}
-        <div className="bg-white p-4 rounded shadow border border-slate-200">
-            <h2 className="font-bold mb-4">Ranking por Operação</h2>
-            <div className="space-y-2">
-                <div className="flex justify-between text-xs font-bold text-gray-400 border-b pb-2"><span>OPERAÇÃO</span><span>ABS</span><span>TO</span></div>
-                {data?.ranking.map((o, i) => (
-                    <div key={i} className="flex justify-between py-2 border-b text-sm">
-                        <span className="font-medium">{o.nome}</span>
-                        <span>{o.abs.toFixed(0)}%</span>
-                        <span className="font-bold text-red-600">{o.to.toFixed(0)}%</span>
-                    </div>
-                ))}
-            </div>
+        <div className="bg-white p-3 rounded shadow">
+            <h2 className="font-bold text-sm mb-2">Ranking</h2>
+            {data?.ranking.map((o, i) => (
+                <div key={i} className="flex justify-between py-1 border-b text-xs"><span>{o.nome}</span><span className="text-yellow-600 font-bold">{o.abs.toFixed(0)}% ABS</span><span className="text-red-600 font-bold">{o.to.toFixed(0)}% TO</span></div>
+            ))}
         </div>
     </div>
   );
-}
-
-function Card({ title, value, color }: { title: string, value: string | number, color: string }) {
-    return <div className={`bg-white p-4 rounded shadow border-l-4 ${color}`}><p className="text-[10px] font-bold text-gray-500 uppercase">{title}</p><p className="text-xl font-bold">{value}</p></div>;
 }
