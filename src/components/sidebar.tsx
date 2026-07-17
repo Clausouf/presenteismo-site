@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { 
   LayoutDashboard, PlusCircle, CalendarDays, Users, Sliders, 
-  LogOut, Menu, X, BookOpen, UserPlus
+  LogOut, Menu, X, BookOpen, UserPlus, UserCircle
 } from 'lucide-react';
 
 export function Sidebar() {
@@ -15,7 +15,8 @@ export function Sidebar() {
   const [isOpen, setIsOpen] = useState(false);
 
   const baseMenuItems = [
-    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+    { name: 'Treinamento', href: '/dashboard/treinamento', icon: LayoutDashboard },
+    { name: 'Recrutamento', href: '/dashboard/recrutamento', icon: UserCircle },
     { name: 'Criar Turmas', href: '/cadastro', icon: PlusCircle },
     { name: 'Diário de Presença', href: '/turmas', icon: BookOpen },
     { name: 'Calendário', href: '/calendario', icon: CalendarDays },
@@ -57,7 +58,8 @@ export function Sidebar() {
 
         <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
           {menuItems.map((item) => {
-            const isActive = pathname === item.href;
+            // Usamos startsWith para manter o menu ativo mesmo em sub-rotas
+            const isActive = pathname.startsWith(item.href);
             const Icon = item.icon;
             return (
               <Link
