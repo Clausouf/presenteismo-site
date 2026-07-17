@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 
-// --- FUNÇÃO EXCLUSIVA DE CLASSIFICAÇÃO ---
+// --- FUNÇÃO DE CLASSIFICAÇÃO (PONTO ÚNICO DE VERDADE) ---
 function classificarOperadores(colaboradores: any[], diario: any[]) {
   const pools = {
     treinamento: [] as any[],
@@ -12,13 +12,20 @@ function classificarOperadores(colaboradores: any[], diario: any[]) {
   };
 
   const normalizar = (str: string) => str?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
+  
+  // Lista exaustiva de termos que definem presença (case insensitive e sem acento)
+  const termosPresenca = ['presente', 'presenca', 'acompanhamento']; 
 
   colaboradores.forEach((colab) => {
+    // Busca logs estritamente vinculados ao ID do colaborador E ao número da turma dele
     const logsDoOperador = diario.filter(
       (d) => d.colaborador_id === colab.id && d.numero_turma === colab.numero_turma
     );
 
-    const tevePresenca = logsDoOperador.some(l => ['presente', 'presenca'].includes(normalizar(l.tipo_registro || '')));
+    // A regra é simples: se encontrar QUALQUER log que indique presença, é Treinamento.
+    const tevePresenca = logsDoOperador.some(l => 
+        termosPresenca.includes(normalizar(l.tipo_registro || ''))
+    );
 
     if (tevePresenca) {
       pools.treinamento.push(colab);
@@ -73,30 +80,28 @@ export default function DashboardPage() {
     const normalizar = (str: string) => str?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
     const isFalta = (tipo: string) => ['falta injustificada', 'falta integracao', 'atestado'].includes(normalizar(tipo || ''));
     
-    // Reforço da validação de TO: cobrindo todas as variações possíveis
+    // Detecção robusta de desligamento
     const isDeslig = (tipo: string) => {
         const t = normalizar(tipo || '');
         return ['desistencia', 'desligamento', 'desligamento a pedido'].some(palavra => t.includes(palavra));
     };
 
-    // 1. Obter os pools classificados
+    // 1. Classificação estrita
     const { treinamento, recrutamento } = classificarOperadores(colabs, diario);
     const poolAtivo = activeTab === 'treinamento' ? treinamento : recrutamento;
 
-    // 2. Aplicar Filtros (Mês, Operação, Turma) APENAS no pool ativo
+    // 2. Filtro dos operadores do pool ativo (Mês, Operação, Turma)
     const filteredPool = poolAtivo.filter(c => {
         const turma = turmas.find(t => t.numero_turma === c.numero_turma);
         if (!turma) return false;
-
         const opMatch = selectedOp === 'Todas' || turma.operacoes?.nome === selectedOp;
         const turmaMatch = selectedTurma === 'Todas' || c.numero_turma === selectedTurma;
-        
         return opMatch && turmaMatch;
     });
 
     const activeIds = filteredPool.map(c => c.id);
 
-    // 3. Buscar Logs do Mês apenas para os operadores do Pool Ativo
+    // 3. Registros do Mês (apenas do pool ativo)
     const logsDoMes = diario.filter(l => 
         activeIds.includes(l.colaborador_id) &&
         new Date(l.data) >= startOfMonth && 
@@ -107,11 +112,11 @@ export default function DashboardPage() {
     const totalRegistros = logsDoMes.filter(l => l.tipo_registro !== 'Folga').length;
     const totalFaltas = logsDoMes.filter(l => isFalta(l.tipo_registro)).length;
     
-    // Identifica operadores que tiveram algum evento de desligamento no mês
-    const idsComDesligamentoNoMes = new Set(logsDoMes.filter(l => isDeslig(l.tipo_registro)).map(l => l.colaborador_id));
-    const totalDesligados = idsComDesligamentoNoMes.size;
+    // Calcula TO baseado em quem teve registro de desligamento no mês
+    const desligadosNoMesIds = new Set(logsDoMes.filter(l => isDeslig(l.tipo_registro)).map(l => l.colaborador_id));
+    const totalDesligados = desligadosNoMesIds.size;
 
-    // Ranking
+    // 5. Ranking por Operação
     const opsAtivas = [...new Set(turmas.map(t => t.operacoes?.nome).filter(Boolean))];
     const ranking = opsAtivas.map(op => {
         const poolDaOp = filteredPool.filter(c => turmas.find(t => t.numero_turma === c.numero_turma)?.operacoes?.nome === op);
@@ -129,13 +134,15 @@ export default function DashboardPage() {
         };
     });
 
-    // 5. Ocupação de Salas (Revertida para o cálculo original detalhado)
+    // 6. Ocupação de Salas (Detalhada)
     const salaStats = salas.map(sala => {
         const turmasNaSala = turmas.filter(t => t.sala === sala.nome && (selectedOp === 'Todas' || t.operacoes?.nome === selectedOp));
         const diasOcupadosSet = new Set<string>();
         turmasNaSala.forEach(t => {
-            const start = new Date(Math.max(new Date(t.data_inicio).getTime(), startOfMonth.getTime()));
-            const end = new Date(Math.min(t.data_fim ? new Date(t.data_fim).getTime() : 9999999999999, endOfMonth.getTime()));
+            const tStart = new Date(t.data_inicio);
+            const tEnd = t.data_fim ? new Date(t.data_fim) : new Date(2099, 0, 1);
+            const start = new Date(Math.max(tStart.getTime(), startOfMonth.getTime()));
+            const end = new Date(Math.min(tEnd.getTime(), endOfMonth.getTime()));
             for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
                 diasOcupadosSet.add(d.toISOString().split('T')[0]);
             }
