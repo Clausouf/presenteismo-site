@@ -45,7 +45,7 @@ export default function DashboardPage() {
     const startOfMonth = new Date(year, month - 1, 1);
     const endOfMonth = new Date(year, month, 0, 23, 59, 59);
 
-    // 1. Escopo de Turmas
+    // 1. Filtragem inicial de turmas
     let turmasFiltradas = turmas.filter(t => {
       const tStart = new Date(t.data_inicio);
       const tEnd = t.data_fim ? new Date(t.data_fim) : new Date(2099, 0, 1);
@@ -57,35 +57,36 @@ export default function DashboardPage() {
 
     const numsTurmas = turmasFiltradas.map(t => t.numero_turma);
 
-    // 2. Classificação Estrita
-    // Função auxiliar para normalizar strings e evitar erros de comparação
+    // 2. Normalizador de strings para comparação robusta
     const normalizar = (str: string) => str?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
+    const isPresente = (tipo: string) => ['presente', 'presenca'].includes(normalizar(tipo || ''));
 
-    const colabsAnalise = colabs
+    // 3. Classificação de Colaboradores (Escopo estrito da turma)
+    const colabsClassificados = colabs
       .filter(c => numsTurmas.includes(c.numero_turma))
       .map(c => {
-        const historicoGeral = diario.filter(d => d.colaborador_id === c.id);
+        // Busca registros SOMENTE da turma do colaborador
+        const logsTurma = diario.filter(d => d.colaborador_id === c.id && d.numero_turma === c.numero_turma);
         
-        // Verifica se há pelo menos um registro de presença/presente
-        const tevePresenca = historicoGeral.some(d => {
-            const registro = normalizar(d.tipo_registro || '');
-            return registro === 'presenca' || registro === 'presente';
-        });
+        const tevePresenca = logsTurma.some(d => isPresente(d.tipo_registro));
+        const temDesligamento = logsTurma.some(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro));
         
         return { 
           ...c, 
-          isTreinamento: tevePresenca, 
-          temDesligamento: historicoGeral.some(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro))
+          isTreinamento: tevePresenca, // Se tem pelo menos uma presença na turma, é Treinamento
+          temDesligamento
         };
       });
 
-    // 3. Segregação de Dados baseada na aba ativa
-    const colabsFiltrados = colabsAnalise.filter(c => 
+    // 4. Filtragem por Aba Ativa (Segregação Total)
+    const colabsFiltrados = colabsClassificados.filter(c => 
       activeTab === 'treinamento' ? c.isTreinamento : !c.isTreinamento
     );
 
-    // 4. Cálculos Isolados
+    // 5. Cálculos (ABS e TO) baseados estritamente nos colabs filtrados
     const poolIds = colabsFiltrados.map(c => c.id);
+    
+    // Logs do mês, apenas para os colabs da aba selecionada, na turma correta
     const logsPool = diario.filter(l => 
         poolIds.includes(l.colaborador_id) && 
         numsTurmas.includes(l.numero_turma) &&
@@ -97,7 +98,7 @@ export default function DashboardPage() {
     const totalFaltas = logsPool.filter(l => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(l.tipo_registro)).length;
     const totalDeslig = colabsFiltrados.filter(c => c.temDesligamento).length;
 
-    // 5. Ranking (Isolado)
+    // 6. Ranking (Isolado por aba)
     const opsDisponiveis = Array.from(new Set(turmasFiltradas.map(t => t.operacoes?.nome).filter(Boolean)));
     const ranking = opsDisponiveis.map(op => {
         const turmasOp = turmasFiltradas.filter(t => t.operacoes?.nome === op);
