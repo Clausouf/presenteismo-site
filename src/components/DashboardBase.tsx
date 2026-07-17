@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 
 function obterClassificacao(colaboradores: any[], diario: any[]) {
   const normalizar = (str: string) => str?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
@@ -21,8 +20,6 @@ function obterClassificacao(colaboradores: any[], diario: any[]) {
   };
 }
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
-
 export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recrutamento' }) {
   const [loading, setLoading] = useState(true);
   const [turmas, setTurmas] = useState<any[]>([]);
@@ -35,7 +32,6 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
     return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`;
   });
   const [selectedOp, setSelectedOp] = useState('Todas');
-  const [selectedTurma, setSelectedTurma] = useState('Todas');
 
   useEffect(() => {
     async function carregarDados() {
@@ -68,9 +64,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
     const filteredPool = poolAtivo.filter(c => {
         const turma = turmas.find(t => t.numero_turma === c.numero_turma);
         if (!turma) return false;
-        const opMatch = selectedOp === 'Todas' || turma.operacoes?.nome === selectedOp;
-        const turmaMatch = selectedTurma === 'Todas' || c.numero_turma === selectedTurma;
-        return opMatch && turmaMatch;
+        return selectedOp === 'Todas' || turma.operacoes?.nome === selectedOp;
     });
 
     const activeIds = filteredPool.map(c => c.id);
@@ -107,7 +101,8 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
             const end = new Date(Math.min(t.data_fim ? new Date(t.data_fim).getTime() : 9999999999999, endOfMonth.getTime()));
             for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) diasSet.add(d.toISOString().split('T')[0]);
         });
-        return { name: sala.nome, dias: diasSet.size, totalTurmas: turmasNaSala.length };
+        const ops = [...new Set(turmasNaSala.map(t => t.operacoes?.nome).filter(Boolean))];
+        return { name: sala.nome, dias: diasSet.size, ops };
     }).filter(s => s.dias > 0);
 
     return {
@@ -118,13 +113,12 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
         ranking,
         salaStats
     };
-  }, [loading, selectedMonth, selectedOp, selectedTurma, tipo, turmas, colabs, diario, salas]);
+  }, [loading, selectedMonth, selectedOp, tipo, turmas, colabs, diario, salas]);
 
   if (loading) return <div className="p-10 text-center">Carregando...</div>;
 
   return (
     <div className="p-6 space-y-6">
-        {/* Switcher de Dashboard */}
         <div className="flex gap-2 mb-6">
             <Link href="/dashboard/treinamento" className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${tipo === 'treinamento' ? 'bg-emerald-600 text-white shadow-lg' : 'bg-white text-emerald-600 border border-emerald-200'}`}>Treinamento</Link>
             <Link href="/dashboard/recrutamento" className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${tipo === 'recrutamento' ? 'bg-purple-600 text-white shadow-lg' : 'bg-white text-purple-600 border border-purple-200'}`}>Recrutamento</Link>
@@ -132,31 +126,35 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
 
         <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-lg shadow gap-4">
             <h1 className="text-xl font-bold capitalize">Dashboard {tipo}</h1>
-            <div className="flex gap-2">
-                <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="border p-2 rounded" />
-                <select onChange={(e) => setSelectedOp(e.target.value)} className="border p-2 rounded"><option value="Todas">Todas Operações</option>{[...new Set(turmas.map(t => t.operacoes?.nome).filter(Boolean))].map(op => <option key={op} value={op}>{op}</option>)}</select>
-            </div>
+            <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="border p-2 rounded" />
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card title="Ativas" value={data?.ativas || 0} color="border-blue-500" />
             <Card title="Finalizadas" value={data?.finalizadas || 0} color="border-green-500" />
-            <Card title="ABS Geral" value={`${data?.abs.toFixed(1)}%`} color="border-yellow-500" />
-            <Card title="TO Geral" value={`${data?.to.toFixed(1)}%`} color="border-red-500" />
+            <Card title="ABS Geral" value={`${(data?.abs || 0).toFixed(1)}%`} color="border-yellow-500" />
+            <Card title="TO Geral" value={`${(data?.to || 0).toFixed(1)}%`} color="border-red-500" />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Tabela de Salas Melhorada */}
             <div className="bg-white p-4 rounded shadow border border-slate-200">
                 <h2 className="font-bold mb-4">Ocupação de Salas</h2>
-                <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                            <Pie data={data?.salaStats} dataKey="dias" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
-                                {data?.salaStats.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                            </Pie>
-                            <Tooltip />
-                        </PieChart>
-                    </ResponsiveContainer>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left">
+                        <thead className="text-xs text-gray-500 uppercase border-b">
+                            <tr><th className="py-2">Sala</th><th className="py-2">Dias</th><th className="py-2">Operações</th></tr>
+                        </thead>
+                        <tbody>
+                            {data?.salaStats.map((s, i) => (
+                                <tr key={i} className="border-b last:border-0">
+                                    <td className="py-3 font-medium">{s.name}</td>
+                                    <td className="py-3">{s.dias}</td>
+                                    <td className="py-3 text-gray-600">{s.ops.join(', ') || '-'}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
