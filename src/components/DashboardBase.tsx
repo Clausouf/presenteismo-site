@@ -3,22 +3,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 
-function obterClassificacao(colaboradores: any[], diario: any[]) {
-  const normalizar = (str: string) => str?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
-  const termosPresenca = ['presente', 'presenca', 'acompanhamento'];
-
-  const idsComPresenca = new Set(
-    diario
-      .filter(l => termosPresenca.includes(normalizar(l.tipo_registro || '')))
-      .map(l => l.colaborador_id)
-  );
-
-  return {
-    treinamento: colaboradores.filter(c => idsComPresenca.has(c.id)),
-    recrutamento: colaboradores.filter(c => !idsComPresenca.has(c.id))
-  };
-}
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
 export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recrutamento' }) {
   const [loading, setLoading] = useState(true);
@@ -32,6 +19,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
     return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`;
   });
   const [selectedOp, setSelectedOp] = useState('Todas');
+  const [selectedTurma, setSelectedTurma] = useState('Todas');
 
   useEffect(() => {
     async function carregarDados() {
@@ -58,62 +46,77 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
     const startOfMonth = new Date(year, month - 1, 1);
     const endOfMonth = new Date(year, month, 0, 23, 59, 59);
 
-    const { treinamento, recrutamento } = obterClassificacao(colabs, diario);
-    const poolAtivo = tipo === 'treinamento' ? treinamento : recrutamento;
-
-    const filteredPool = poolAtivo.filter(c => {
+    const normalizar = (s: string) => s?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
+    
+    // Filtragem Básica de UI (Op e Turma)
+    const basePool = colabs.filter(c => {
         const turma = turmas.find(t => t.numero_turma === c.numero_turma);
         if (!turma) return false;
-        return selectedOp === 'Todas' || turma.operacoes?.nome === selectedOp;
+        const opMatch = selectedOp === 'Todas' || turma.operacoes?.nome === selectedOp;
+        const turmaMatch = selectedTurma === 'Todas' || c.numero_turma === selectedTurma;
+        return opMatch && turmaMatch;
     });
 
-    const activeIds = filteredPool.map(c => c.id);
-    const logsDoMes = diario.filter(l => 
-        activeIds.includes(l.colaborador_id) &&
-        new Date(l.data) >= startOfMonth && 
-        new Date(l.data) <= endOfMonth
-    );
+    // Classificação por Tipo
+    const poolFinal = basePool.filter(c => {
+        const logs = diario.filter(l => l.colaborador_id === c.id && new Date(l.data) >= startOfMonth && new Date(l.data) <= endOfMonth);
+        const types = logs.map(l => normalizar(l.tipo_registro));
+        const hasPresenca = types.some(t => ['presente', 'presenca', 'acompanhamento'].includes(t));
+        
+        return tipo === 'treinamento' ? hasPresenca : !hasPresenca;
+    });
 
-    const normalizar = (s: string) => s?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
-    const isFalta = (t: string) => ['falta injustificada', 'falta integracao', 'atestado'].includes(normalizar(t || ''));
-    const isDeslig = (t: string) => ['desistencia', 'desligamento', 'desligamento a pedido'].some(p => normalizar(t || '').includes(p));
+    let absCount = 0;
+    let toCount = 0;
 
-    const regCount = logsDoMes.filter(l => l.tipo_registro !== 'Folga').length;
-    const faltasCount = logsDoMes.filter(l => isFalta(l.tipo_registro)).length;
-    const desligadosCount = new Set(logsDoMes.filter(l => isDeslig(l.tipo_registro)).map(l => l.colaborador_id)).size;
+    if (tipo === 'recrutamento') {
+        poolFinal.forEach(c => {
+            const logs = diario.filter(l => l.colaborador_id === c.id && new Date(l.data) >= startOfMonth && new Date(l.data) <= endOfMonth);
+            const types = logs.map(l => normalizar(l.tipo_registro));
+            
+            const hasFaltaInt = types.includes('falta integracao');
+            const hasFaltaInj = types.includes('falta injustificada');
+            const hasDeslig = types.some(t => ['desistencia', 'desligamento', 'desligamento a pedido'].includes(t));
+            
+            // Regra RECRUTAMENTO: Deve ter Falta Int + Falta Inj E NADA MAIS.
+            const allowedTypes = ['falta integracao', 'falta injustificada', 'desistencia', 'desligamento', 'desligamento a pedido'];
+            const hasUnknown = types.some(t => !allowedTypes.includes(t));
 
+            const qualifiesForABS = hasFaltaInt && hasFaltaInj && !hasUnknown;
+            const qualifiesForTO = qualifiesForABS && hasDeslig;
+
+            if (qualifiesForABS) absCount++;
+            if (qualifiesForTO) toCount++;
+        });
+    } else {
+        // Regra TREINAMENTO: Tem presença
+        const trainingPoolIds = poolFinal.map(c => c.id);
+        const logsDoMes = diario.filter(l => trainingPoolIds.includes(l.colaborador_id));
+        
+        // ABS: Pessoas com pelo menos uma falta
+        absCount = new Set(logsDoMes.filter(l => normalizar(l.tipo_registro).includes('falta')).map(l => l.colaborador_id)).size;
+        // TO: Pessoas com desligamento
+        toCount = new Set(logsDoMes.filter(l => ['desistencia', 'desligamento', 'desligamento a pedido'].includes(normalizar(l.tipo_registro))).map(l => l.colaborador_id)).size;
+    }
+
+    // Salas e Ranking
     const opsAtivas = [...new Set(turmas.map(t => t.operacoes?.nome).filter(Boolean))];
-    const ranking = opsAtivas.map(op => {
-        const poolDaOp = filteredPool.filter(c => turmas.find(t => t.numero_turma === c.numero_turma)?.operacoes?.nome === op);
-        const idsOp = poolDaOp.map(c => c.id);
-        const logsOp = logsDoMes.filter(l => idsOp.includes(l.colaborador_id));
-        const regOp = logsOp.filter(l => l.tipo_registro !== 'Folga').length;
-        const falOp = logsOp.filter(l => isFalta(l.tipo_registro)).length;
-        const desOp = new Set(logsOp.filter(l => isDeslig(l.tipo_registro)).map(l => l.colaborador_id)).size;
-        return { nome: op, abs: regOp > 0 ? (falOp / regOp) * 100 : 0, to: poolDaOp.length > 0 ? (desOp / poolDaOp.length) * 100 : 0 };
-    });
-
+    const ranking = opsAtivas.map(op => ({ nome: op, abs: (absCount/Math.max(1, poolFinal.length))*100, to: (toCount/Math.max(1, poolFinal.length))*100 }));
+    
     const salaStats = salas.map(sala => {
         const turmasNaSala = turmas.filter(t => t.sala === sala.nome && (selectedOp === 'Todas' || t.operacoes?.nome === selectedOp));
-        const diasSet = new Set<string>();
-        turmasNaSala.forEach(t => {
-            const start = new Date(Math.max(new Date(t.data_inicio).getTime(), startOfMonth.getTime()));
-            const end = new Date(Math.min(t.data_fim ? new Date(t.data_fim).getTime() : 9999999999999, endOfMonth.getTime()));
-            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) diasSet.add(d.toISOString().split('T')[0]);
-        });
-        const ops = [...new Set(turmasNaSala.map(t => t.operacoes?.nome).filter(Boolean))];
-        return { name: sala.nome, dias: diasSet.size, ops };
+        return { name: sala.nome, dias: turmasNaSala.length > 0 ? 1 : 0, ops: [...new Set(turmasNaSala.map(t => t.operacoes?.nome).filter(Boolean))] };
     }).filter(s => s.dias > 0);
 
     return {
         ativas: turmas.filter(t => t.status === 'Em Andamento').length,
         finalizadas: turmas.filter(t => t.status === 'Finalizada').length,
-        abs: regCount > 0 ? (faltasCount / regCount) * 100 : 0,
-        to: filteredPool.length > 0 ? (desligadosCount / filteredPool.length) * 100 : 0,
+        abs: poolFinal.length > 0 ? (absCount / poolFinal.length) * 100 : 0,
+        to: poolFinal.length > 0 ? (toCount / poolFinal.length) * 100 : 0,
         ranking,
         salaStats
     };
-  }, [loading, selectedMonth, selectedOp, tipo, turmas, colabs, diario, salas]);
+  }, [loading, selectedMonth, selectedOp, selectedTurma, tipo, turmas, colabs, diario, salas]);
 
   if (loading) return <div className="p-10 text-center">Carregando...</div>;
 
@@ -124,9 +127,11 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
             <Link href="/dashboard/recrutamento" className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${tipo === 'recrutamento' ? 'bg-purple-600 text-white shadow-lg' : 'bg-white text-purple-600 border border-purple-200'}`}>Recrutamento</Link>
         </div>
 
-        <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-lg shadow gap-4">
-            <h1 className="text-xl font-bold capitalize">Dashboard {tipo}</h1>
+        <div className="flex flex-wrap items-center bg-white p-4 rounded-lg shadow gap-4">
+            <h1 className="text-xl font-bold capitalize mr-auto">Dashboard {tipo}</h1>
             <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="border p-2 rounded" />
+            <select onChange={(e) => setSelectedOp(e.target.value)} className="border p-2 rounded"><option value="Todas">Todas Operações</option>{[...new Set(turmas.map(t => t.operacoes?.nome).filter(Boolean))].map(op => <option key={op} value={op}>{op}</option>)}</select>
+            <select onChange={(e) => setSelectedTurma(e.target.value)} className="border p-2 rounded"><option value="Todas">Todas Turmas</option>{[...new Set(turmas.map(t => t.numero_turma).filter(Boolean))].map(num => <option key={num} value={num}>{num}</option>)}</select>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -137,9 +142,22 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Tabela de Salas Melhorada */}
             <div className="bg-white p-4 rounded shadow border border-slate-200">
                 <h2 className="font-bold mb-4">Ocupação de Salas</h2>
+                <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                            <Pie data={data?.salaStats} dataKey="dias" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
+                                {data?.salaStats.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                            </Pie>
+                            <Tooltip />
+                        </PieChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+
+            <div className="bg-white p-4 rounded shadow border border-slate-200">
+                <h2 className="font-bold mb-4">Detalhes de Ocupação</h2>
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left">
                         <thead className="text-xs text-gray-500 uppercase border-b">
@@ -155,20 +173,6 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
                             ))}
                         </tbody>
                     </table>
-                </div>
-            </div>
-
-            <div className="bg-white p-4 rounded shadow border border-slate-200">
-                <h2 className="font-bold mb-4">Ranking por Operação</h2>
-                <div className="space-y-2">
-                    <div className="flex justify-between text-xs font-bold text-gray-400 border-b pb-2"><span>OPERAÇÃO</span><span>ABS</span><span>TO</span></div>
-                    {data?.ranking.map((o, i) => (
-                        <div key={i} className="flex justify-between py-2 border-b text-sm">
-                            <span className="font-medium">{o.nome}</span>
-                            <span>{o.abs.toFixed(0)}%</span>
-                            <span className="font-bold text-red-600">{o.to.toFixed(0)}%</span>
-                        </div>
-                    ))}
                 </div>
             </div>
         </div>
