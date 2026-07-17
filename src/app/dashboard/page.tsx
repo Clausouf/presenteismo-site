@@ -13,6 +13,9 @@ export default function DashboardPage() {
   const [diario, setDiario] = useState<any[]>([]);
   const [salas, setSalas] = useState<any[]>([]);
   
+  // Tabs: 'andamento' ou 'recrutamento'
+  const [activeTab, setActiveTab] = useState<'andamento' | 'recrutamento'>('andamento');
+  
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`;
@@ -38,8 +41,6 @@ export default function DashboardPage() {
     carregarDados();
   }, []);
 
-  useEffect(() => { setSelectedTurma('Todas'); }, [selectedOp]);
-
   const dashboardData = useMemo(() => {
     const [year, month] = selectedMonth.split('-').map(Number);
     const startOfMonth = new Date(year, month - 1, 1);
@@ -57,66 +58,64 @@ export default function DashboardPage() {
 
     const numsTurmas = turmasFiltradas.map(t => t.numero_turma);
 
-    // 2. Classificação Binária Estrita
-    // Regra: Se tem 'Presente' no histórico = Andamento. Se nunca teve = Recrutamento.
+    // 2. Classificação Baseada na Tab Ativa
     const colabsAnalise = colabs
       .filter(c => numsTurmas.includes(c.numero_turma))
       .map(c => {
         const historicoGeral = diario.filter(d => d.colaborador_id === c.id);
         const tevePresenca = historicoGeral.some(d => d.tipo_registro === 'Presente');
-        const temDesligamento = historicoGeral.some(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro));
         
         return { 
           ...c, 
-          categoria: tevePresenca ? 'ANDAMENTO' : 'RECRUTAMENTO',
-          temDesligamento 
+          isAndamento: tevePresenca,
+          temDesligamento: historicoGeral.some(d => ['Desistência', 'Desligamento a Pedido'].includes(d.tipo_registro))
         };
-      });
+      })
+      .filter(c => activeTab === 'andamento' ? c.isAndamento : !c.isAndamento);
 
-    // 3. Função de cálculo isolado (apenas dados da operação/turma alvo)
-    const getStats = (pool: any[], turmasAlvo: string[]) => {
-        const poolIds = pool.map(c => c.id);
-        const logsPool = diario.filter(l => 
-            poolIds.includes(l.colaborador_id) && 
-            turmasAlvo.includes(l.numero_turma) &&
-            new Date(l.data) >= startOfMonth && 
-            new Date(l.data) <= endOfMonth
+    // 3. Calculos (focados apenas no pool filtrado)
+    const poolIds = colabsAnalise.map(c => c.id);
+    const logsPool = diario.filter(l => 
+        poolIds.includes(l.colaborador_id) && 
+        numsTurmas.includes(l.numero_turma) &&
+        new Date(l.data) >= startOfMonth && 
+        new Date(l.data) <= endOfMonth
+    );
+    
+    const totalRegistros = logsPool.filter(l => l.tipo_registro !== 'Folga').length;
+    const totalFaltas = logsPool.filter(l => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(l.tipo_registro)).length;
+    const totalDeslig = colabsAnalise.filter(c => c.temDesligamento).length;
+
+    // 4. Rankings por Operação
+    const opsDisponiveis = Array.from(new Set(turmasFiltradas.map(t => t.operacoes?.nome).filter(Boolean)));
+    const ranking = opsDisponiveis.map(op => {
+        const turmasOp = turmasFiltradas.filter(t => t.operacoes?.nome === op);
+        const numsOp = turmasOp.map(t => t.numero_turma);
+        const poolOp = colabsAnalise.filter(c => numsOp.includes(c.numero_turma));
+        
+        const logsOp = diario.filter(l => 
+            poolOp.map(c => c.id).includes(l.colaborador_id) && 
+            numsOp.includes(l.numero_turma) &&
+            new Date(l.data) >= startOfMonth && new Date(l.data) <= endOfMonth
         );
         
-        const totalRegistros = logsPool.filter(l => l.tipo_registro !== 'Folga').length;
-        const totalFaltas = logsPool.filter(l => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(l.tipo_registro)).length;
-        const totalDeslig = pool.filter(c => c.temDesligamento).length;
-        
-        return {
-            abs: totalRegistros > 0 ? (totalFaltas / totalRegistros) * 100 : 0,
-            to: pool.length > 0 ? (totalDeslig / pool.length) * 100 : 0
+        const regOp = logsOp.filter(l => l.tipo_registro !== 'Folga').length;
+        const falOp = logsOp.filter(l => ['Falta Injustificada', 'Falta Integração', 'Atestado'].includes(l.tipo_registro)).length;
+        const desOp = poolOp.filter(c => c.temDesligamento).length;
+
+        return { 
+            nome: op, 
+            abs: regOp > 0 ? (falOp / regOp) * 100 : 0,
+            to: poolOp.length > 0 ? (desOp / poolOp.length) * 100 : 0
         };
-    };
-
-    // 4. Rankings isolados
-    const opsDisponiveis = Array.from(new Set(turmasFiltradas.map(t => t.operacoes?.nome).filter(Boolean)));
-    
-    const rankingAndamento = opsDisponiveis.map(op => {
-        const turmasOp = turmasFiltradas.filter(t => t.operacoes?.nome === op);
-        const numsOp = turmasOp.map(t => t.numero_turma);
-        const pool = colabsAnalise.filter(c => numsOp.includes(c.numero_turma) && c.categoria === 'ANDAMENTO');
-        return { nome: op, ...getStats(pool, numsOp) };
-    });
-
-    const rankingRecrutamento = opsDisponiveis.map(op => {
-        const turmasOp = turmasFiltradas.filter(t => t.operacoes?.nome === op);
-        const numsOp = turmasOp.map(t => t.numero_turma);
-        const pool = colabsAnalise.filter(c => numsOp.includes(c.numero_turma) && c.categoria === 'RECRUTAMENTO');
-        return { nome: op, ...getStats(pool, numsOp) };
     });
 
     return {
         ativas: turmasFiltradas.filter(t => t.status === 'Em Andamento').length,
         finalizadas: turmasFiltradas.filter(t => t.status === 'Finalizada').length,
-        statsAndamento: getStats(colabsAnalise.filter(c => c.categoria === 'ANDAMENTO'), numsTurmas),
-        statsRecrutamento: getStats(colabsAnalise.filter(c => c.categoria === 'RECRUTAMENTO'), numsTurmas),
-        rankingAndamento,
-        rankingRecrutamento,
+        abs: totalRegistros > 0 ? (totalFaltas / totalRegistros) * 100 : 0,
+        to: colabsAnalise.length > 0 ? (totalDeslig / colabsAnalise.length) * 100 : 0,
+        ranking,
         salaStats: salas.map(sala => {
             const turmasNaSala = turmasFiltradas.filter(t => t.sala === sala.nome);
             const diasOcupadosSet = new Set<string>();
@@ -130,14 +129,14 @@ export default function DashboardPage() {
             return { name: sala.nome, dias: diasOcupadosSet.size, totalTurmas: turmasNaSala.length };
         }).filter(s => s.dias > 0)
     };
-  }, [selectedMonth, selectedOp, selectedTurma, turmas, colabs, diario, salas]);
+  }, [selectedMonth, selectedOp, selectedTurma, activeTab, turmas, colabs, diario, salas]);
 
   if (loading) return <div className="p-10 text-center">Carregando...</div>;
 
   return (
     <div className="p-6 space-y-6">
         <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-lg shadow gap-4">
-            <h1 className="text-xl font-bold">Dashboard Geral - {new Date(selectedMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</h1>
+            <h1 className="text-xl font-bold">Dashboard {activeTab === 'andamento' ? 'Andamento' : 'Recrutamento'} - {new Date(selectedMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</h1>
             <div className="flex gap-2">
                 <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="border p-2 rounded" />
                 <select value={selectedOp} onChange={(e) => setSelectedOp(e.target.value)} className="border p-2 rounded">
@@ -151,13 +150,17 @@ export default function DashboardPage() {
             </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+        {/* Toggle de Abas */}
+        <div className="flex gap-2 p-1 bg-gray-100 rounded-lg w-fit">
+            <button onClick={() => setActiveTab('andamento')} className={`px-4 py-2 rounded shadow ${activeTab === 'andamento' ? 'bg-white font-bold' : 'text-gray-500'}`}>Em Andamento</button>
+            <button onClick={() => setActiveTab('recrutamento')} className={`px-4 py-2 rounded shadow ${activeTab === 'recrutamento' ? 'bg-white font-bold' : 'text-gray-500'}`}>Recrutamento</button>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card title="Ativas (Mês)" value={dashboardData.ativas} color="border-blue-500" />
             <Card title="Finaliz. (Mês)" value={dashboardData.finalizadas} color="border-green-500" />
-            <Card title="ABS Mensal" value={`${dashboardData.statsAndamento.abs.toFixed(1)}%`} color="border-yellow-500" />
-            <Card title="TO Mensal" value={`${dashboardData.statsAndamento.to.toFixed(1)}%`} color="border-red-500" />
-            <Card title="ABS Recrut." value={`${dashboardData.statsRecrutamento.abs.toFixed(1)}%`} color="border-purple-400" />
-            <Card title="TO Recrut." value={`${dashboardData.statsRecrutamento.to.toFixed(1)}%`} color="border-purple-700" />
+            <Card title="ABS Geral" value={`${dashboardData.abs.toFixed(1)}%`} color="border-yellow-500" />
+            <Card title="TO Geral" value={`${dashboardData.to.toFixed(1)}%`} color="border-red-500" />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -185,9 +188,18 @@ export default function DashboardPage() {
                 </div>
             </div>
 
-            <div className="space-y-4">
-                <Ranking title="Ranking Andamento" data={dashboardData.rankingAndamento} color="text-red-600" />
-                <Ranking title="Ranking Recrutamento" data={dashboardData.rankingRecrutamento} color="text-purple-600" />
+            <div className="bg-white p-4 rounded shadow border border-gray-100">
+                <h2 className={`font-bold mb-2 text-sm`}>Ranking por Operação</h2>
+                <div className="space-y-1">
+                    <div className="flex justify-between text-[10px] font-bold text-gray-400 border-b pb-1"><span>OPERAÇÃO</span><span>ABS</span><span>TO</span></div>
+                    {dashboardData.ranking.map((o, i) => (
+                        <div key={i} className="flex justify-between text-xs border-b py-1">
+                            <span className="font-medium">{o.nome}</span>
+                            <span className="font-bold">{o.abs.toFixed(0)}%</span>
+                            <span className="font-bold">{o.to.toFixed(0)}%</span>
+                        </div>
+                    ))}
+                </div>
             </div>
         </div>
     </div>
@@ -199,24 +211,6 @@ function Card({ title, value, color }: { title: string, value: string | number, 
         <div className={`bg-white p-4 rounded shadow border-l-4 ${color}`}>
             <p className="text-[10px] font-bold text-gray-500 uppercase">{title}</p>
             <p className="text-xl font-bold">{value}</p>
-        </div>
-    );
-}
-
-function Ranking({ title, data, color }: { title: string, data: any[], color: string }) {
-    return (
-        <div className="bg-white p-4 rounded shadow border border-gray-100">
-            <h2 className={`font-bold mb-2 text-sm ${color}`}>{title}</h2>
-            <div className="space-y-1">
-                <div className="flex justify-between text-[10px] font-bold text-gray-400 border-b pb-1"><span>OPERAÇÃO</span><span>ABS</span><span>TO</span></div>
-                {data.map((o, i) => (
-                    <div key={i} className="flex justify-between text-xs border-b py-1">
-                        <span className="font-medium">{o.nome}</span>
-                        <span className="font-bold">{o.abs.toFixed(0)}%</span>
-                        <span className="font-bold">{o.to.toFixed(0)}%</span>
-                    </div>
-                ))}
-            </div>
         </div>
     );
 }
