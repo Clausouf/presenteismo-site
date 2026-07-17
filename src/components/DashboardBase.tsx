@@ -48,7 +48,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
 
     const normalizar = (s: string) => s?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
     
-    // Filtragem Básica de UI (Op e Turma)
+    // Filtro base de UI
     const basePool = colabs.filter(c => {
         const turma = turmas.find(t => t.numero_turma === c.numero_turma);
         if (!turma) return false;
@@ -57,51 +57,62 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
         return opMatch && turmaMatch;
     });
 
-    // Classificação por Tipo
+    // Classificação por Tipo (Recrutamento vs Treinamento)
     const poolFinal = basePool.filter(c => {
         const logs = diario.filter(l => l.colaborador_id === c.id && new Date(l.data) >= startOfMonth && new Date(l.data) <= endOfMonth);
         const types = logs.map(l => normalizar(l.tipo_registro));
         const hasPresenca = types.some(t => ['presente', 'presenca', 'acompanhamento'].includes(t));
-        
         return tipo === 'treinamento' ? hasPresenca : !hasPresenca;
     });
 
-    let absCount = 0;
-    let toCount = 0;
+    // Função de cálculo estrito para cada colaborador
+    const calcularMetricas = (colabId: string) => {
+        const logs = diario.filter(l => l.colaborador_id === colabId && new Date(l.data) >= startOfMonth && new Date(l.data) <= endOfMonth);
+        const types = logs.map(l => normalizar(l.tipo_registro));
 
-    if (tipo === 'recrutamento') {
-        poolFinal.forEach(c => {
-            const logs = diario.filter(l => l.colaborador_id === c.id && new Date(l.data) >= startOfMonth && new Date(l.data) <= endOfMonth);
-            const types = logs.map(l => normalizar(l.tipo_registro));
-            
+        if (tipo === 'recrutamento') {
             const hasFaltaInt = types.includes('falta integracao');
             const hasFaltaInj = types.includes('falta injustificada');
             const hasDeslig = types.some(t => ['desistencia', 'desligamento', 'desligamento a pedido'].includes(t));
-            
-            // Regra RECRUTAMENTO: Deve ter Falta Int + Falta Inj E NADA MAIS.
             const allowedTypes = ['falta integracao', 'falta injustificada', 'desistencia', 'desligamento', 'desligamento a pedido'];
             const hasUnknown = types.some(t => !allowedTypes.includes(t));
 
             const qualifiesForABS = hasFaltaInt && hasFaltaInj && !hasUnknown;
             const qualifiesForTO = qualifiesForABS && hasDeslig;
+            return { abs: qualifiesForABS, to: qualifiesForTO };
+        } else {
+            // Treinamento: Tem presença é o critério.
+            // ABS: Teve falta (qualquer uma). TO: Teve desligamento.
+            const hasFalta = types.some(t => t.includes('falta'));
+            const hasDeslig = types.some(t => ['desistencia', 'desligamento', 'desligamento a pedido'].includes(t));
+            return { abs: hasFalta, to: hasDeslig };
+        }
+    };
 
-            if (qualifiesForABS) absCount++;
-            if (qualifiesForTO) toCount++;
-        });
-    } else {
-        // Regra TREINAMENTO: Tem presença
-        const trainingPoolIds = poolFinal.map(c => c.id);
-        const logsDoMes = diario.filter(l => trainingPoolIds.includes(l.colaborador_id));
-        
-        // ABS: Pessoas com pelo menos uma falta
-        absCount = new Set(logsDoMes.filter(l => normalizar(l.tipo_registro).includes('falta')).map(l => l.colaborador_id)).size;
-        // TO: Pessoas com desligamento
-        toCount = new Set(logsDoMes.filter(l => ['desistencia', 'desligamento', 'desligamento a pedido'].includes(normalizar(l.tipo_registro))).map(l => l.colaborador_id)).size;
-    }
+    let absCount = 0;
+    let toCount = 0;
+    poolFinal.forEach(c => {
+        const m = calcularMetricas(c.id);
+        if (m.abs) absCount++;
+        if (m.to) toCount++;
+    });
 
-    // Salas e Ranking
+    // Ranking por Operação
     const opsAtivas = [...new Set(turmas.map(t => t.operacoes?.nome).filter(Boolean))];
-    const ranking = opsAtivas.map(op => ({ nome: op, abs: (absCount/Math.max(1, poolFinal.length))*100, to: (toCount/Math.max(1, poolFinal.length))*100 }));
+    const ranking = opsAtivas.map(op => {
+        const poolOp = poolFinal.filter(c => turmas.find(t => t.numero_turma === c.numero_turma)?.operacoes?.nome === op);
+        let absOp = 0; let toOp = 0;
+        poolOp.forEach(c => {
+            const m = calcularMetricas(c.id);
+            if (m.abs) absOp++;
+            if (m.to) toOp++;
+        });
+        return { 
+            nome: op, 
+            abs: poolOp.length > 0 ? (absOp / poolOp.length) * 100 : 0, 
+            to: poolOp.length > 0 ? (toOp / poolOp.length) * 100 : 0 
+        };
+    });
     
     const salaStats = salas.map(sala => {
         const turmasNaSala = turmas.filter(t => t.sala === sala.nome && (selectedOp === 'Todas' || t.operacoes?.nome === selectedOp));
@@ -141,6 +152,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
             <Card title="TO Geral" value={`${(data?.to || 0).toFixed(1)}%`} color="border-red-500" />
         </div>
 
+        {/* Ocupação (Gráfico + Tabela) */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white p-4 rounded shadow border border-slate-200">
                 <h2 className="font-bold mb-4">Ocupação de Salas</h2>
@@ -174,6 +186,21 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
                         </tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+
+        {/* Ranking por Operação */}
+        <div className="bg-white p-4 rounded shadow border border-slate-200">
+            <h2 className="font-bold mb-4">Ranking por Operação</h2>
+            <div className="space-y-2">
+                <div className="flex justify-between text-xs font-bold text-gray-400 border-b pb-2"><span>OPERAÇÃO</span><span>ABS</span><span>TO</span></div>
+                {data?.ranking.map((o, i) => (
+                    <div key={i} className="flex justify-between py-2 border-b text-sm">
+                        <span className="font-medium">{o.nome}</span>
+                        <span>{o.abs.toFixed(0)}%</span>
+                        <span className="font-bold text-red-600">{o.to.toFixed(0)}%</span>
+                    </div>
+                ))}
             </div>
         </div>
     </div>
