@@ -41,30 +41,29 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
     const endOfMonth = new Date(year, month, 0, 23, 59, 59);
     const normalize = (s: string) => s?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
 
-    // 1. Aplicar Filtros de Escopo (O segredo da dinâmica)
+    // 1. Definição do Escopo de Turmas (Dinâmico para os selects)
     const filteredTurmas = raw.turmas.filter(t => 
       (selectedOp === 'Todas' || t.operacoes?.nome === selectedOp) &&
       (selectedTurma === 'Todas' || t.numero_turma === selectedTurma)
     );
 
-    const filteredTurmaNumbers = filteredTurmas.map(t => t.numero_turma);
-
-    // 2. Classificação de Colaboradores (Regra de Negócio)
-    const operators = raw.colabs
-      .filter(c => filteredTurmaNumbers.includes(c.numero_turma)) // Só colabs das turmas selecionadas
-      .map(c => {
+    // 2. Classificação de Colaboradores (Independente de turma rígida)
+    const operators = raw.colabs.map(c => {
         const logs = raw.diario.filter(l => l.colaborador_id === c.id && new Date(l.data) >= startOfMonth && new Date(l.data) <= endOfMonth);
         const types = logs.map(l => normalize(l.tipo_registro));
         
         const hasPresence = types.some(t => ['presente', 'presenca', 'acompanhamento'].includes(t));
+        const turmaObj = raw.turmas.find(t => t.numero_turma === c.numero_turma);
+
+        // Regra de Classificação:
+        // Se tem presença -> Treinamento
+        // Se NÃO tem presença (ou vazio) -> Recrutamento
+        const category = hasPresence ? 'treinamento' : 'recrutamento';
+        
+        // Regras de cálculo
         const hasFaltaInt = types.includes('falta integracao');
         const hasFaltaInj = types.includes('falta injustificada');
         const hasDeslig = types.some(t => ['desistencia', 'desligamento', 'desligamento a pedido'].includes(t));
-        
-        // Regra de Ouro:
-        // Treinamento = Tem presença
-        // Recrutamento = Não tem presença (só faltas ou vazio)
-        const category = hasPresence ? 'treinamento' : 'recrutamento';
         
         let isAbs = false;
         let isTo = false;
@@ -73,22 +72,34 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
             isAbs = types.some(t => t.includes('falta'));
             isTo = hasDeslig;
         } else {
-            // Regra Recrutamento (Estrita)
+            // Recrutamento estrito (Zero presença, foco em faltas)
             isAbs = hasFaltaInt && hasFaltaInj;
             isTo = hasFaltaInt && hasFaltaInj && hasDeslig;
         }
 
-        const turmaObj = filteredTurmas.find(t => t.numero_turma === c.numero_turma);
-        return { ...c, category, isAbs, isTo, op: turmaObj?.operacoes?.nome, turma: c.numero_turma };
+        return { 
+            ...c, 
+            category, 
+            isAbs, 
+            isTo, 
+            op: turmaObj?.operacoes?.nome || 'Sem Operação', 
+            turma: c.numero_turma || 'Sem Turma' 
+        };
     });
 
-    // 3. Filtrar pelo Tipo da Página (Treinamento ou Recrutamento)
-    const finalOperators = operators.filter(o => o.category === tipo);
+    // 3. Aplicação dos Filtros após a classificação
+    const finalOperators = operators.filter(o => {
+        const matchesCategory = o.category === tipo;
+        const matchesOp = selectedOp === 'Todas' || o.op === selectedOp;
+        const matchesTurma = selectedTurma === 'Todas' || o.turma === selectedTurma;
+        return matchesCategory && matchesOp && matchesTurma;
+    });
+
     const total = finalOperators.length;
     const absCount = finalOperators.filter(f => f.isAbs).length;
     const toCount = finalOperators.filter(f => f.isTo).length;
 
-    // 4. Ranking (Baseado no filtrado)
+    // 4. Ranking
     const ops = [...new Set(finalOperators.map(f => f.op).filter(Boolean))];
     const ranking = ops.map(op => {
       const group = finalOperators.filter(f => f.op === op);
@@ -99,7 +110,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       };
     });
 
-    // 5. Cálculo Dinâmico de Dias de Sala
+    // 5. Cálculo Dinâmico de Dias de Sala (Baseado no escopo filtrado)
     const salaStats = raw.salas.map(s => {
       let diasEmUso = 0;
       for (let d = new Date(startOfMonth); d <= endOfMonth; d.setDate(d.getDate() + 1)) {
@@ -111,7 +122,11 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
         });
         if (isOccupied) diasEmUso++;
       }
-      return { name: s.nome, dias: diasEmUso, turmas: filteredTurmas.filter(t => t.sala === s.nome).map(t => t.numero_turma) };
+      return { 
+        name: s.nome, 
+        dias: diasEmUso, 
+        turmas: filteredTurmas.filter(t => t.sala === s.nome).map(t => t.numero_turma) 
+      };
     }).filter(s => s.dias > 0);
 
     return { 
