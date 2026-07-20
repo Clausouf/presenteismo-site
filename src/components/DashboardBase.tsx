@@ -41,7 +41,13 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
     const endOfMonth = new Date(year, month, 0, 23, 59, 59);
     const normalize = (s: string) => s?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
 
-    // 1. Definição do Escopo de Turmas
+    // 1. Dicionário de Busca (Lookup Map) - Resolve a duplicidade
+    // Mapeia numero_turma -> Operação Nome
+    const turmaLookup = new Map();
+    raw.turmas.forEach(t => {
+        turmaLookup.set(t.numero_turma, t.operacoes?.nome || 'Sem Operação');
+    });
+
     const filteredTurmas = raw.turmas.filter(t => 
       (selectedOp === 'Todas' || t.operacoes?.nome === selectedOp) &&
       (selectedTurma === 'Todas' || t.numero_turma === selectedTurma)
@@ -53,35 +59,35 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
         .filter(c => validTurmaNumbers.includes(c.numero_turma))
         .map(c => {
             const logs = raw.diario.filter(l => l.colaborador_id === c.id && new Date(l.data) >= startOfMonth && new Date(l.data) <= endOfMonth);
-            const totalDiasEsperados = logs.length; // Cada registro é um dia de "espera"
+            const totalDiasEsperados = logs.length;
             
             const logsNormalized = logs.map(l => normalize(l.tipo_registro));
             const hasPresence = logsNormalized.some(t => ['presente', 'presenca', 'acompanhamento'].includes(t));
             
             const category = hasPresence ? 'treinamento' : 'recrutamento';
 
-            // Contadores de eventos
             const countAbs = logsNormalized.filter(t => t.includes('falta')).length;
             const countTO = logsNormalized.filter(t => ['desistencia', 'desligamento', 'desligamento a pedido'].includes(t)).length;
+
+            // Busca segura via Lookup Map
+            const opNome = turmaLookup.get(c.numero_turma) || 'Sem Operação';
 
             return {
                 category,
                 countAbs,
                 countTO,
                 totalDiasEsperados,
-                op: raw.turmas.find(t => t.numero_turma === c.numero_turma)?.operacoes?.nome || 'Sem Operação'
+                op: opNome,
+                turma: c.numero_turma
             };
         });
 
-    // 3. Filtrar pela categoria selecionada (Treinamento ou Recrutamento)
     const finalData = metrics.filter(m => m.category === tipo);
     
-    // Cálculo do total (Soma de todos os eventos)
     const totalPossivel = finalData.reduce((acc, curr) => acc + curr.totalDiasEsperados, 0);
     const totalAbs = finalData.reduce((acc, curr) => acc + curr.countAbs, 0);
     const totalTO = finalData.reduce((acc, curr) => acc + curr.countTO, 0);
 
-    // 4. Ranking (Calculado por operação)
     const ops = [...new Set(finalData.map(f => f.op))];
     const ranking = ops.map(op => {
       const group = finalData.filter(f => f.op === op);
@@ -96,7 +102,6 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       };
     });
 
-    // 5. Cálculo Dinâmico de Dias de Sala
     const salaStats = raw.salas.map(s => {
       let diasEmUso = 0;
       for (let d = new Date(startOfMonth); d <= endOfMonth; d.setDate(d.getDate() + 1)) {
