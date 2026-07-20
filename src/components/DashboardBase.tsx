@@ -41,8 +41,6 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
     const endOfMonth = new Date(year, month, 0, 23, 59, 59);
     const normalize = (s: string) => s?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
 
-    // 1. Dicionário de Busca (Lookup Map) - Resolve a duplicidade
-    // Mapeia numero_turma -> Operação Nome
     const turmaLookup = new Map();
     raw.turmas.forEach(t => {
         turmaLookup.set(t.numero_turma, t.operacoes?.nome || 'Sem Operação');
@@ -54,13 +52,18 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
     );
     const validTurmaNumbers = filteredTurmas.map(t => t.numero_turma);
 
-    // 2. Processamento Individual e Classificação
     const metrics = raw.colabs
         .filter(c => validTurmaNumbers.includes(c.numero_turma))
         .map(c => {
-            const logs = raw.diario.filter(l => l.colaborador_id === c.id && new Date(l.data) >= startOfMonth && new Date(l.data) <= endOfMonth);
-            const totalDiasEsperados = logs.length;
+            // CORREÇÃO: Isolamento total por matricula e turma
+            const logs = raw.diario.filter(l => 
+                l.matricula === c.matricula && 
+                l.numero_turma === c.numero_turma && 
+                new Date(l.data) >= startOfMonth && 
+                new Date(l.data) <= endOfMonth
+            );
             
+            const totalDiasEsperados = logs.length;
             const logsNormalized = logs.map(l => normalize(l.tipo_registro));
             const hasPresence = logsNormalized.some(t => ['presente', 'presenca', 'acompanhamento'].includes(t));
             
@@ -69,7 +72,6 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
             const countAbs = logsNormalized.filter(t => t.includes('falta')).length;
             const countTO = logsNormalized.filter(t => ['desistencia', 'desligamento', 'desligamento a pedido'].includes(t)).length;
 
-            // Busca segura via Lookup Map
             const opNome = turmaLookup.get(c.numero_turma) || 'Sem Operação';
 
             return {
