@@ -36,15 +36,6 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
   const data = useMemo(() => {
     if (loading) return null;
 
-    // --- CORREÇÃO: LÓGICA DE CATEGORIZAÇÃO ---
-    // Esta função agora busca no banco de dados a categoria da turma
-    const definirCategoria = (turmaNum: string) => {
-        const turma = raw.turmas.find(t => t.numero_turma === turmaNum);
-        // AJUSTE AQUI: Se a sua coluna no banco se chama 'tipo' ou outro nome, altere 'categoria' abaixo
-        // Se preferir verificar pelo nome da turma: turma?.nome.toLowerCase().includes('recrutamento')
-        return turma?.categoria?.toLowerCase() === 'recrutamento' ? 'recrutamento' : 'treinamento';
-    };
-
     const [year, month] = selectedMonth.split('-').map(Number);
     const startOfMonth = new Date(year, month - 1, 1);
     const endOfMonth = new Date(year, month, 0, 23, 59, 59);
@@ -52,7 +43,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
 
     const turmaLookup = new Map();
     raw.turmas.forEach(t => {
-        turmaLookup.set(t.numero_turma, t.operacoes?.nome || 'Sem Operação');
+      turmaLookup.set(t.numero_turma, t.operacoes?.nome || 'Sem Operação');
     });
 
     const filteredTurmas = raw.turmas.filter(t => 
@@ -62,34 +53,42 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
     const validTurmaNumbers = filteredTurmas.map(t => t.numero_turma);
 
     const metrics = raw.colabs
-        .filter(c => validTurmaNumbers.includes(c.numero_turma))
-        .map(c => {
-            const logs = raw.diario.filter(l => 
-                l.matricula === c.matricula && 
-                l.numero_turma === c.numero_turma && 
-                new Date(l.data) >= startOfMonth && 
-                new Date(l.data) <= endOfMonth
-            );
-            
-            const totalDiasEsperados = logs.length;
-            const logsNormalized = logs.map(l => normalize(l.tipo_registro));
-            
-            const countAbs = logsNormalized.filter(t => t.includes('falta')).length;
-            const countTO = logsNormalized.filter(t => ['desistencia', 'desligamento', 'desligamento a pedido'].includes(t)).length;
+      .filter(c => validTurmaNumbers.includes(c.numero_turma))
+      .map(c => {
+        const logs = raw.diario.filter(l => 
+          l.matricula === c.matricula && 
+          l.numero_turma === c.numero_turma && 
+          new Date(l.data) >= startOfMonth && 
+          new Date(l.data) <= endOfMonth
+        );
 
-            return {
-                category: definirCategoria(c.numero_turma),
-                countAbs,
-                countTO,
-                totalDiasEsperados,
-                op: turmaLookup.get(c.numero_turma) || 'Sem Operação',
-                turma: c.numero_turma
-            };
-        });
+        const totalDiasEsperados = logs.length;
+        const logsNormalized = logs.map(l => normalize(l.tipo_registro));
 
-    // Agora o filtro funciona corretamente porque a categoria é real
+        const countAbs = logsNormalized.filter(t => t.includes('falta')).length;
+        const countPresenca = logsNormalized.filter(t => t.includes('presenca') || t.includes('presente')).length;
+        const countTO = logsNormalized.filter(t => ['desistencia', 'desligamento', 'desligamento a pedido'].includes(t)).length;
+
+        // ─── REGRA DE CATEGORIZAÇÃO POR COLABORADOR ───────────────────────
+        // Recrutamento: zero presenças (nunca compareceu — só faltas)
+        // Treinamento:  pelo menos uma presença E pelo menos uma falta
+        const category: 'recrutamento' | 'treinamento' =
+          countPresenca === 0 && countAbs > 0 ? 'recrutamento' : 'treinamento';
+        // ──────────────────────────────────────────────────────────────────
+
+        return {
+          category,
+          countAbs,
+          countTO,
+          totalDiasEsperados,
+          op: turmaLookup.get(c.numero_turma) || 'Sem Operação',
+          turma: c.numero_turma
+        };
+      });
+
+    // Filtra apenas os colaboradores da categoria atual (treinamento ou recrutamento)
     const finalData = metrics.filter(m => m.category === tipo);
-    
+
     const totalPossivel = finalData.reduce((acc, curr) => acc + curr.totalDiasEsperados, 0);
     const totalAbs = finalData.reduce((acc, curr) => acc + curr.countAbs, 0);
     const totalTO = finalData.reduce((acc, curr) => acc + curr.countTO, 0);
@@ -100,29 +99,40 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       const groupPossivel = group.reduce((acc, curr) => acc + curr.totalDiasEsperados, 0);
       const groupAbs = group.reduce((acc, curr) => acc + curr.countAbs, 0);
       const groupTO = group.reduce((acc, curr) => acc + curr.countTO, 0);
-      return { nome: op, abs: groupPossivel > 0 ? (groupAbs / groupPossivel) * 100 : 0, to: groupPossivel > 0 ? (groupTO / groupPossivel) * 100 : 0 };
+      return {
+        nome: op,
+        abs: groupPossivel > 0 ? (groupAbs / groupPossivel) * 100 : 0,
+        to: groupPossivel > 0 ? (groupTO / groupPossivel) * 100 : 0
+      };
     });
 
     const turmasUnicas = [...new Set(finalData.map(f => f.turma))];
     const rankingTurmas = turmasUnicas.map(tNum => {
-        const group = finalData.filter(f => f.turma === tNum);
-        const groupPossivel = group.reduce((acc, curr) => acc + curr.totalDiasEsperados, 0);
-        const groupAbs = group.reduce((acc, curr) => acc + curr.countAbs, 0);
-        return { turma: tNum, abs: groupPossivel > 0 ? (groupAbs / groupPossivel) * 100 : 0 };
+      const group = finalData.filter(f => f.turma === tNum);
+      const groupPossivel = group.reduce((acc, curr) => acc + curr.totalDiasEsperados, 0);
+      const groupAbs = group.reduce((acc, curr) => acc + curr.countAbs, 0);
+      return {
+        turma: tNum,
+        abs: groupPossivel > 0 ? (groupAbs / groupPossivel) * 100 : 0
+      };
     }).sort((a, b) => b.abs - a.abs);
 
     const salaStats = raw.salas.map(s => {
       let diasEmUso = 0;
       for (let d = new Date(startOfMonth); d <= endOfMonth; d.setDate(d.getDate() + 1)) {
         const isOccupied = filteredTurmas.some(t => {
-            if (t.sala !== s.nome) return false;
-            const start = new Date(t.data_inicio);
-            const end = t.data_fim ? new Date(t.data_fim) : new Date(2099, 11, 31);
-            return d >= start && d <= end;
+          if (t.sala !== s.nome) return false;
+          const start = new Date(t.data_inicio);
+          const end = t.data_fim ? new Date(t.data_fim) : new Date(2099, 11, 31);
+          return d >= start && d <= end;
         });
         if (isOccupied) diasEmUso++;
       }
-      return { name: s.nome, dias: diasEmUso, turmas: filteredTurmas.filter(t => t.sala === s.nome).map(t => t.numero_turma) };
+      return {
+        name: s.nome,
+        dias: diasEmUso,
+        turmas: filteredTurmas.filter(t => t.sala === s.nome).map(t => t.numero_turma)
+      };
     }).filter(s => s.dias > 0);
 
     return { 
@@ -140,61 +150,61 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
 
   return (
     <div className="p-4 space-y-4">
-        <div className="flex gap-2">
-            <Link href="/dashboard/treinamento" className={`px-4 py-2 rounded-lg text-sm font-bold ${tipo === 'treinamento' ? 'bg-emerald-600 text-white' : 'bg-white text-emerald-600 border'}`}>Treinamento</Link>
-            <Link href="/dashboard/recrutamento" className={`px-4 py-2 rounded-lg text-sm font-bold ${tipo === 'recrutamento' ? 'bg-purple-600 text-white' : 'bg-white text-purple-600 border'}`}>Recrutamento</Link>
-        </div>
+      <div className="flex gap-2">
+        <Link href="/dashboard/treinamento" className={`px-4 py-2 rounded-lg text-sm font-bold ${tipo === 'treinamento' ? 'bg-emerald-600 text-white' : 'bg-white text-emerald-600 border'}`}>Treinamento</Link>
+        <Link href="/dashboard/recrutamento" className={`px-4 py-2 rounded-lg text-sm font-bold ${tipo === 'recrutamento' ? 'bg-purple-600 text-white' : 'bg-white text-purple-600 border'}`}>Recrutamento</Link>
+      </div>
 
-        <div className="flex flex-wrap items-center bg-white p-3 rounded-lg shadow gap-3">
-            <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="border p-1.5 text-sm rounded" />
-            <select onChange={(e) => setSelectedOp(e.target.value)} className="border p-1.5 text-sm rounded"><option value="Todas">Todas Operações</option>{[...new Set(raw.turmas.map(t => t.operacoes?.nome).filter(Boolean))].map(op => <option key={op} value={op}>{op}</option>)}</select>
-            <select onChange={(e) => setSelectedTurma(e.target.value)} className="border p-1.5 text-sm rounded"><option value="Todas">Todas Turmas</option>{[...new Set(raw.turmas.map(t => t.numero_turma))].map(num => <option key={num} value={num}>Turma {num}</option>)}</select>
-        </div>
+      <div className="flex flex-wrap items-center bg-white p-3 rounded-lg shadow gap-3">
+        <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="border p-1.5 text-sm rounded" />
+        <select onChange={(e) => setSelectedOp(e.target.value)} className="border p-1.5 text-sm rounded"><option value="Todas">Todas Operações</option>{[...new Set(raw.turmas.map(t => t.operacoes?.nome).filter(Boolean))].map(op => <option key={op} value={op}>{op}</option>)}</select>
+        <select onChange={(e) => setSelectedTurma(e.target.value)} className="border p-1.5 text-sm rounded"><option value="Todas">Todas Turmas</option>{[...new Set(raw.turmas.map(t => t.numero_turma))].map(num => <option key={num} value={num}>Turma {num}</option>)}</select>
+      </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="bg-white p-3 rounded shadow border-l-4 border-blue-500"><p className="text-[10px] font-bold text-gray-500">ATIVAS</p><p className="text-lg font-bold">{data.ativas}</p></div>
-            <div className="bg-white p-3 rounded shadow border-l-4 border-green-500"><p className="text-[10px] font-bold text-gray-500">FINALIZADAS</p><p className="text-lg font-bold">{data.finalizadas}</p></div>
-            <div className="bg-white p-3 rounded shadow border-l-4 border-yellow-500"><p className="text-[10px] font-bold text-gray-500">ABS</p><p className="text-lg font-bold">{data.abs.toFixed(1)}%</p></div>
-            <div className="bg-white p-3 rounded shadow border-l-4 border-red-500"><p className="text-[10px] font-bold text-gray-500">TO</p><p className="text-lg font-bold">{data.to.toFixed(1)}%</p></div>
-        </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="bg-white p-3 rounded shadow border-l-4 border-blue-500"><p className="text-[10px] font-bold text-gray-500">ATIVAS</p><p className="text-lg font-bold">{data.ativas}</p></div>
+        <div className="bg-white p-3 rounded shadow border-l-4 border-green-500"><p className="text-[10px] font-bold text-gray-500">FINALIZADAS</p><p className="text-lg font-bold">{data.finalizadas}</p></div>
+        <div className="bg-white p-3 rounded shadow border-l-4 border-yellow-500"><p className="text-[10px] font-bold text-gray-500">ABS</p><p className="text-lg font-bold">{data.abs.toFixed(1)}%</p></div>
+        <div className="bg-white p-3 rounded shadow border-l-4 border-red-500"><p className="text-[10px] font-bold text-gray-500">TO</p><p className="text-lg font-bold">{data.to.toFixed(1)}%</p></div>
+      </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-white p-3 rounded shadow">
-                <h2 className="font-bold text-sm mb-2 text-slate-700">Ranking por Operação</h2>
-                {data.ranking.map((o: any, i: number) => (
-                    <div key={i} className="flex justify-between py-1 border-b text-xs"><span>{o.nome}</span><span className="text-yellow-600 font-bold">{o.abs.toFixed(0)}% ABS</span><span className="text-red-600 font-bold">{o.to.toFixed(0)}% TO</span></div>
-                ))}
-            </div>
-            <div className="bg-white p-3 rounded shadow">
-                <h2 className="font-bold text-sm mb-2 text-slate-700">Ranking por Turmas (ABS)</h2>
-                <div className="max-h-40 overflow-y-auto pr-2">
-                    {data.rankingTurmas.map((t: any, i: number) => (
-                        <div key={i} className="flex justify-between py-1 border-b text-xs">
-                            <span className="font-medium">Turma {t.turma}</span>
-                            <span className="text-rose-600 font-bold">{t.abs.toFixed(0)}%</span>
-                        </div>
-                    ))}
-                </div>
-            </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-white p-3 rounded shadow">
+          <h2 className="font-bold text-sm mb-2 text-slate-700">Ranking por Operação</h2>
+          {data.ranking.map((o: any, i: number) => (
+            <div key={i} className="flex justify-between py-1 border-b text-xs"><span>{o.nome}</span><span className="text-yellow-600 font-bold">{o.abs.toFixed(0)}% ABS</span><span className="text-red-600 font-bold">{o.to.toFixed(0)}% TO</span></div>
+          ))}
         </div>
+        <div className="bg-white p-3 rounded shadow">
+          <h2 className="font-bold text-sm mb-2 text-slate-700">Ranking por Turmas (ABS)</h2>
+          <div className="max-h-40 overflow-y-auto pr-2">
+            {data.rankingTurmas.map((t: any, i: number) => (
+              <div key={i} className="flex justify-between py-1 border-b text-xs">
+                <span className="font-medium">Turma {t.turma}</span>
+                <span className="text-rose-600 font-bold">{t.abs.toFixed(0)}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-white p-3 rounded shadow">
-                <h2 className="font-bold text-sm mb-2">Ocupação de Salas</h2>
-                <div className="h-48">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <PieChart><Pie data={data.salaStats} dataKey="dias" nameKey="name" cx="50%" cy="50%" outerRadius={60} label>{data.salaStats.map((_:any, i:number) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}</Pie><Tooltip /></PieChart>
-                    </ResponsiveContainer>
-                </div>
-            </div>
-            <div className="bg-white p-3 rounded shadow overflow-hidden">
-                <h2 className="font-bold text-sm mb-2">Detalhes do Ensalamento</h2>
-                <table className="w-full text-xs text-left">
-                    <thead><tr className="border-b"><th className="py-1">Sala</th><th className="py-1">Dias</th><th className="py-1">Turmas</th></tr></thead>
-                    <tbody>{data.salaStats.map((s:any, i:number) => <tr key={i} className="border-b"><td className="py-1.5 font-medium">{s.name}</td><td className="py-1.5">{s.dias}</td><td className="py-1.5 truncate">{s.turmas.join(', ')}</td></tr>)}</tbody>
-                </table>
-            </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-white p-3 rounded shadow">
+          <h2 className="font-bold text-sm mb-2">Ocupação de Salas</h2>
+          <div className="h-48">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart><Pie data={data.salaStats} dataKey="dias" nameKey="name" cx="50%" cy="50%" outerRadius={60} label>{data.salaStats.map((_:any, i:number) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}</Pie><Tooltip /></PieChart>
+            </ResponsiveContainer>
+          </div>
         </div>
+        <div className="bg-white p-3 rounded shadow overflow-hidden">
+          <h2 className="font-bold text-sm mb-2">Detalhes do Ensalamento</h2>
+          <table className="w-full text-xs text-left">
+            <thead><tr className="border-b"><th className="py-1">Sala</th><th className="py-1">Dias</th><th className="py-1">Turmas</th></tr></thead>
+            <tbody>{data.salaStats.map((s:any, i:number) => <tr key={i} className="border-b"><td className="py-1.5 font-medium">{s.name}</td><td className="py-1.5">{s.dias}</td><td className="py-1.5 truncate">{s.turmas.join(', ')}</td></tr>)}</tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
