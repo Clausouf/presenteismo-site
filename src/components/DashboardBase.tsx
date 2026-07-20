@@ -36,14 +36,13 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
   const data = useMemo(() => {
     if (loading) return null;
 
-    // --- CONFIGURAÇÃO DE CATEGORIA ---
-    // AJUSTE AQUI: Defina como identificar se a turma é Recrutamento ou Treinamento
+    // --- CORREÇÃO: LÓGICA DE CATEGORIZAÇÃO ---
+    // Esta função agora busca no banco de dados a categoria da turma
     const definirCategoria = (turmaNum: string) => {
-        // Exemplo: se as turmas de recrutamento começam com 9, use:
-        // return turmaNum.toString().startsWith('9') ? 'recrutamento' : 'treinamento';
-        
-        // Se precisar de lógica mais complexa, você pode buscar no objeto turma:
-        return 'treinamento'; // Mude conforme sua regra de negócio
+        const turma = raw.turmas.find(t => t.numero_turma === turmaNum);
+        // AJUSTE AQUI: Se a sua coluna no banco se chama 'tipo' ou outro nome, altere 'categoria' abaixo
+        // Se preferir verificar pelo nome da turma: turma?.nome.toLowerCase().includes('recrutamento')
+        return turma?.categoria?.toLowerCase() === 'recrutamento' ? 'recrutamento' : 'treinamento';
     };
 
     const [year, month] = selectedMonth.split('-').map(Number);
@@ -65,7 +64,6 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
     const metrics = raw.colabs
         .filter(c => validTurmaNumbers.includes(c.numero_turma))
         .map(c => {
-            // CORREÇÃO: Isolamento total usando matricula E numero_turma
             const logs = raw.diario.filter(l => 
                 l.matricula === c.matricula && 
                 l.numero_turma === c.numero_turma && 
@@ -89,13 +87,13 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
             };
         });
 
+    // Agora o filtro funciona corretamente porque a categoria é real
     const finalData = metrics.filter(m => m.category === tipo);
     
     const totalPossivel = finalData.reduce((acc, curr) => acc + curr.totalDiasEsperados, 0);
     const totalAbs = finalData.reduce((acc, curr) => acc + curr.countAbs, 0);
     const totalTO = finalData.reduce((acc, curr) => acc + curr.countTO, 0);
 
-    // --- RANKING POR OPERAÇÃO ---
     const ops = [...new Set(finalData.map(f => f.op))];
     const ranking = ops.map(op => {
       const group = finalData.filter(f => f.op === op);
@@ -105,7 +103,6 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       return { nome: op, abs: groupPossivel > 0 ? (groupAbs / groupPossivel) * 100 : 0, to: groupPossivel > 0 ? (groupTO / groupPossivel) * 100 : 0 };
     });
 
-    // --- RANKING POR TURMAS (NOVO) ---
     const turmasUnicas = [...new Set(finalData.map(f => f.turma))];
     const rankingTurmas = turmasUnicas.map(tNum => {
         const group = finalData.filter(f => f.turma === tNum);
@@ -143,20 +140,17 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
 
   return (
     <div className="p-4 space-y-4">
-        {/* Navegação de Categoria */}
         <div className="flex gap-2">
             <Link href="/dashboard/treinamento" className={`px-4 py-2 rounded-lg text-sm font-bold ${tipo === 'treinamento' ? 'bg-emerald-600 text-white' : 'bg-white text-emerald-600 border'}`}>Treinamento</Link>
             <Link href="/dashboard/recrutamento" className={`px-4 py-2 rounded-lg text-sm font-bold ${tipo === 'recrutamento' ? 'bg-purple-600 text-white' : 'bg-white text-purple-600 border'}`}>Recrutamento</Link>
         </div>
 
-        {/* Filtros */}
         <div className="flex flex-wrap items-center bg-white p-3 rounded-lg shadow gap-3">
             <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="border p-1.5 text-sm rounded" />
             <select onChange={(e) => setSelectedOp(e.target.value)} className="border p-1.5 text-sm rounded"><option value="Todas">Todas Operações</option>{[...new Set(raw.turmas.map(t => t.operacoes?.nome).filter(Boolean))].map(op => <option key={op} value={op}>{op}</option>)}</select>
             <select onChange={(e) => setSelectedTurma(e.target.value)} className="border p-1.5 text-sm rounded"><option value="Todas">Todas Turmas</option>{[...new Set(raw.turmas.map(t => t.numero_turma))].map(num => <option key={num} value={num}>Turma {num}</option>)}</select>
         </div>
 
-        {/* Indicadores */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-white p-3 rounded shadow border-l-4 border-blue-500"><p className="text-[10px] font-bold text-gray-500">ATIVAS</p><p className="text-lg font-bold">{data.ativas}</p></div>
             <div className="bg-white p-3 rounded shadow border-l-4 border-green-500"><p className="text-[10px] font-bold text-gray-500">FINALIZADAS</p><p className="text-lg font-bold">{data.finalizadas}</p></div>
@@ -164,7 +158,6 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
             <div className="bg-white p-3 rounded shadow border-l-4 border-red-500"><p className="text-[10px] font-bold text-gray-500">TO</p><p className="text-lg font-bold">{data.to.toFixed(1)}%</p></div>
         </div>
 
-        {/* Rankings */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-white p-3 rounded shadow">
                 <h2 className="font-bold text-sm mb-2 text-slate-700">Ranking por Operação</h2>
@@ -185,7 +178,6 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
             </div>
         </div>
 
-        {/* Ocupação */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-white p-3 rounded shadow">
                 <h2 className="font-bold text-sm mb-2">Ocupação de Salas</h2>
