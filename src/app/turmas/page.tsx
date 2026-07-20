@@ -1,14 +1,18 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Trash2, ChevronDown, BookOpen, Clock, MapPin, User, AlertCircle, TrendingDown, MessageSquare, Plus, Calendar } from 'lucide-react';
+import {
+  Trash2, ChevronDown, BookOpen, Clock, MapPin, User,
+  AlertCircle, TrendingDown, MessageSquare, Plus, Calendar, X,
+  CreditCard, Briefcase, Timer,
+} from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
 const STATUS_OPTIONS = [
   { value: 'Em Andamento', label: 'Em Andamento' },
-  { value: 'Finalizada', label: 'Finalizada' },
+  { value: 'Finalizada',   label: 'Finalizada'   },
 ];
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
@@ -27,6 +31,100 @@ const REGISTRO_COLORS: Record<string, string> = {
   '':                      'bg-white text-slate-400 border-slate-200',
 };
 
+// ── MODAL DE DADOS DO OPERADOR ───────────────────────────────────────────────
+function OperadorModal({ colab, onClose }: { colab: any; onClose: () => void }) {
+  // Fecha ao pressionar Esc
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  return (
+    // Overlay
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+      onClick={onClose}
+    >
+      {/* Card do modal — clique interno não fecha */}
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="bg-gradient-to-r from-slate-800 to-slate-700 px-5 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center">
+              <User className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <p className="text-white font-bold text-sm leading-tight">{colab.nome}</p>
+              <p className="text-slate-400 text-xs mt-0.5">Dados do Operador</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-all"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Corpo */}
+        <div className="px-5 py-4 space-y-3">
+          {/* Matrícula */}
+          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
+            <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+              <CreditCard className="w-4 h-4 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Matrícula</p>
+              <p className="text-sm font-bold text-gray-800">{colab.matricula || '—'}</p>
+            </div>
+          </div>
+
+          {/* Jornada */}
+          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
+            <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center flex-shrink-0">
+              <Briefcase className="w-4 h-4 text-emerald-600" />
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Jornada</p>
+              <p className="text-sm font-bold text-gray-800">{colab.jornada || '—'}</p>
+            </div>
+          </div>
+
+          {/* Grupo 30h */}
+          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
+            <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
+              <Timer className="w-4 h-4 text-amber-600" />
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Grupo 30h</p>
+              <p className="text-sm font-bold text-gray-800">
+                {colab.grupo_30_horas === true ? (
+                  <span className="text-emerald-600">Sim</span>
+                ) : '—'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 pb-4">
+          <button
+            onClick={onClose}
+            className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-white text-sm font-semibold rounded-xl transition-colors"
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FormattedDate({ dateString }: { dateString: string }) {
   const [date, setDate] = useState<string>('');
   useEffect(() => { setDate(new Date(dateString).toLocaleString('pt-BR')); }, [dateString]);
@@ -38,6 +136,7 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
   const [observacoes, setObservacoes] = useState(obsInicial || []);
   const [novaObs, setNovaObs] = useState('');
   const [obsOpen, setObsOpen] = useState(false);
+  const [operadorSelecionado, setOperadorSelecionado] = useState<any | null>(null);
 
   const datas = gerarArrayDatas(turma.data_inicio, turma.data_fim);
   const statusColor = STATUS_COLORS[turma.status] || STATUS_COLORS['Em Andamento'];
@@ -73,241 +172,246 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
   };
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden mb-6">
+    <>
+      {/* Modal do operador — renderizado fora do card para evitar overflow:hidden */}
+      {operadorSelecionado && (
+        <OperadorModal
+          colab={operadorSelecionado}
+          onClose={() => setOperadorSelecionado(null)}
+        />
+      )}
 
-      {/* ── HEADER DA TURMA ── */}
-      <div className="px-5 py-4 bg-gradient-to-r from-slate-800 to-slate-700 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0">
-            <BookOpen className="w-5 h-5 text-white" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="text-white font-bold text-base leading-tight truncate">
-              Turma {turma.numero_turma}
-              {responsavelNome && ` — ${responsavelNome}`}
-            </h2>
-            <div className="flex flex-wrap items-center gap-3 mt-1">
-              {turma.sala && (
+      <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden mb-6">
+
+        {/* ── HEADER DA TURMA ── */}
+        <div className="px-5 py-4 bg-gradient-to-r from-slate-800 to-slate-700 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0">
+              <BookOpen className="w-5 h-5 text-white" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-white font-bold text-base leading-tight truncate">
+                Turma {turma.numero_turma}
+                {responsavelNome && ` — ${responsavelNome}`}
+              </h2>
+              <div className="flex flex-wrap items-center gap-3 mt-1">
+                {turma.sala && (
+                  <span className="flex items-center gap-1 text-slate-300 text-xs">
+                    <MapPin className="w-3 h-3" /> {turma.sala}
+                  </span>
+                )}
+                {turma.horario && (
+                  <span className="flex items-center gap-1 text-slate-300 text-xs">
+                    <Clock className="w-3 h-3" /> {turma.horario.substring(0, 5)}
+                  </span>
+                )}
                 <span className="flex items-center gap-1 text-slate-300 text-xs">
-                  <MapPin className="w-3 h-3" /> {turma.sala}
+                  <User className="w-3 h-3" /> {colaboradores.length} operador{colaboradores.length !== 1 ? 'es' : ''}
                 </span>
-              )}
-              {turma.horario && (
-                <span className="flex items-center gap-1 text-slate-300 text-xs">
-                  <Clock className="w-3 h-3" /> {turma.horario.substring(0, 5)}
-                </span>
-              )}
-              <span className="flex items-center gap-1 text-slate-300 text-xs">
-                <User className="w-3 h-3" /> {colaboradores.length} operador{colaboradores.length !== 1 ? 'es' : ''}
-              </span>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Status badge + select */}
-          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border ${statusColor.bg} ${statusColor.text} border-transparent`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${statusColor.dot}`} />
-            <select
-              value={turma.status}
-              onChange={(e) => onStatusChange(turma.numero_turma, e.target.value)}
-              className={`text-xs font-bold bg-transparent border-none outline-none cursor-pointer ${statusColor.text}`}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${statusColor.bg} ${statusColor.text}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${statusColor.dot}`} />
+              <select
+                value={turma.status}
+                onChange={(e) => onStatusChange(turma.numero_turma, e.target.value)}
+                className={`text-xs font-bold bg-transparent border-none outline-none cursor-pointer ${statusColor.text}`}
+              >
+                {STATUS_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              onClick={() => onDeleteTurma(turma.numero_turma)}
+              className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-rose-500/80 text-white/70 hover:text-white transition-all"
+              title="Excluir Turma"
             >
-              {STATUS_OPTIONS.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+              <Trash2 className="w-4 h-4" />
+            </button>
           </div>
-
-          <button
-            onClick={() => onDeleteTurma(turma.numero_turma)}
-            className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-rose-500/80 text-white/70 hover:text-white transition-all"
-            title="Excluir Turma"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
         </div>
-      </div>
 
-      {/* ── TABELA DE PRESENÇA ── */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-xs border-collapse">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase tracking-wide min-w-[180px] sticky left-0 bg-gray-50 z-10">
-                Operador
-              </th>
-              {datas.map((d, i) => {
-                const isIntegracao = i === 0;
-                const isAcomp = i >= datas.length - 3;
-                const label = isIntegracao ? 'Integração' : isAcomp ? 'Acomp.' : 'Treinamento';
-                const labelColor = isIntegracao ? 'text-blue-600' : isAcomp ? 'text-orange-500' : 'text-gray-400';
-                const dayNum = d.split('-')[2];
-                return (
-                  <th key={d} className="px-1 py-3 text-center min-w-[80px]">
-                    <div className={`text-[9px] font-bold uppercase tracking-wide ${labelColor}`}>{label}</div>
-                    <div className="text-sm font-bold text-gray-700 mt-0.5">{dayNum}</div>
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
+        {/* ── TABELA DE PRESENÇA ── */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase tracking-wide min-w-[200px] sticky left-0 bg-gray-50 z-10">
+                  Operador
+                </th>
+                {datas.map((d, i) => {
+                  const isIntegracao = i === 0;
+                  const isAcomp = i >= datas.length - 3;
+                  const label = isIntegracao ? 'Integração' : isAcomp ? 'Acomp.' : 'Treinamento';
+                  const labelColor = isIntegracao ? 'text-blue-600' : isAcomp ? 'text-orange-500' : 'text-gray-400';
+                  return (
+                    <th key={d} className="px-1 py-3 text-center min-w-[80px]">
+                      <div className={`text-[9px] font-bold uppercase tracking-wide ${labelColor}`}>{label}</div>
+                      <div className="text-sm font-bold text-gray-700 mt-0.5">{d.split('-')[2]}</div>
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
 
-          <tbody className="divide-y divide-gray-100">
-            {colaboradores.map((c: any) => (
-              <tr key={c.matricula} className="hover:bg-blue-50/30 transition-colors group">
-                <td className="px-4 py-2.5 sticky left-0 bg-white group-hover:bg-blue-50/30 z-10">
-                  <div className="relative">
-                    <span className="font-semibold text-gray-800 text-xs cursor-help border-b border-dotted border-gray-300 hover:text-blue-600 transition-colors">
-                      {c.nome}
-                    </span>
-                    {/* Tooltip */}
-                    <div className="absolute left-0 top-full mt-2 w-60 bg-gray-900 text-white p-3 rounded-xl shadow-2xl hidden group-hover:block z-50 text-[11px] pointer-events-none border border-gray-700">
-                      <p className="font-bold text-blue-400 border-b border-gray-700 pb-1.5 mb-1.5">{c.nome}</p>
-                      <div className="space-y-1">
-                        <p><span className="text-gray-400">Matrícula:</span> <span className="text-white">{c.matricula}</span></p>
-                        <p><span className="text-gray-400">Jornada:</span> <span className="text-white">{c.jornada || '—'}</span></p>
-                        <p><span className="text-gray-400">Grupo 30h:</span> <span className="text-white">{c.grupo_30_horas === true ? 'Sim' : '—'}</span></p>
-                      </div>
-                    </div>
+            <tbody className="divide-y divide-gray-100">
+              {colaboradores.map((c: any) => (
+                <tr key={c.matricula} className="hover:bg-blue-50/30 transition-colors">
+                  <td className="px-4 py-2.5 sticky left-0 bg-white hover:bg-blue-50/30 z-10">
+                    {/* Botão de clique para abrir modal */}
+                    <button
+                      onClick={() => setOperadorSelecionado(c)}
+                      className="flex items-center gap-1.5 group/btn text-left"
+                      title="Ver dados do operador"
+                    >
+                      <span className="font-semibold text-gray-800 text-xs group-hover/btn:text-blue-600 transition-colors border-b border-dotted border-gray-300 group-hover/btn:border-blue-400">
+                        {c.nome}
+                      </span>
+                      <span className="w-4 h-4 flex items-center justify-center rounded-full bg-gray-100 group-hover/btn:bg-blue-100 transition-colors flex-shrink-0">
+                        <User className="w-2.5 h-2.5 text-gray-400 group-hover/btn:text-blue-500" />
+                      </span>
+                    </button>
+                  </td>
+                  {datas.map(d => {
+                    const val = presencas[`${c.matricula}_${d}`]?.tipo_registro || '';
+                    const colorClass = REGISTRO_COLORS[val] || REGISTRO_COLORS[''];
+                    return (
+                      <td key={d} className="px-1 py-2">
+                        <select
+                          value={val}
+                          onChange={(e) => onUpdate(turma.numero_turma, c.matricula, c.nome, d, e.target.value)}
+                          className={`w-full border rounded-lg text-[10px] px-1.5 py-1 font-medium cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300 ${colorClass}`}
+                        >
+                          <option value="">--</option>
+                          <option value="Presença">Presença</option>
+                          <option value="Folga">Folga</option>
+                          <option value="Falta Injustificada">Falta Injustificada</option>
+                          <option value="Falta Integração">Falta Integração</option>
+                          <option value="Desistência">Desistência</option>
+                          <option value="Desligamento a Pedido">Desligamento</option>
+                          <option value="Atestado">Atestado</option>
+                        </select>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+
+            {/* ── RODAPÉ DE INDICADORES ── */}
+            <tfoot>
+              <tr className="bg-rose-50/60 border-t-2 border-rose-100">
+                <td className="px-4 py-2.5 sticky left-0 bg-rose-50/60 z-10">
+                  <div className="flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
+                    <span className="text-xs font-bold text-rose-700">ABS (%)</span>
                   </div>
                 </td>
                 {datas.map(d => {
-                  const val = presencas[`${c.matricula}_${d}`]?.tipo_registro || '';
-                  const colorClass = REGISTRO_COLORS[val] || REGISTRO_COLORS[''];
+                  const val = Number(calcularIndicadores(d).absPercent);
                   return (
-                    <td key={d} className="px-1 py-2">
-                      <select
-                        value={val}
-                        onChange={(e) => onUpdate(turma.numero_turma, c.matricula, c.nome, d, e.target.value)}
-                        className={`w-full border rounded-lg text-[10px] px-1.5 py-1 font-medium cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300 ${colorClass}`}
-                      >
-                        <option value="">--</option>
-                        <option value="Presença">Presença</option>
-                        <option value="Folga">Folga</option>
-                        <option value="Falta Injustificada">Falta Injustificada</option>
-                        <option value="Falta Integração">Falta Integração</option>
-                        <option value="Desistência">Desistência</option>
-                        <option value="Desligamento a Pedido">Desligamento</option>
-                        <option value="Atestado">Atestado</option>
-                      </select>
+                    <td key={d} className="text-center py-2.5">
+                      <span className={`text-xs font-bold ${val > 0 ? 'text-rose-600' : 'text-gray-400'}`}>
+                        {val}%
+                      </span>
                     </td>
                   );
                 })}
               </tr>
-            ))}
-          </tbody>
-
-          {/* ── RODAPÉ DE INDICADORES ── */}
-          <tfoot>
-            <tr className="bg-rose-50/60 border-t-2 border-rose-100">
-              <td className="px-4 py-2.5 sticky left-0 bg-rose-50/60 z-10">
-                <div className="flex items-center gap-1.5">
-                  <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
-                  <span className="text-xs font-bold text-rose-700">ABS (%)</span>
-                </div>
-              </td>
-              {datas.map(d => {
-                const val = Number(calcularIndicadores(d).absPercent);
-                return (
-                  <td key={d} className="text-center py-2.5">
-                    <span className={`text-xs font-bold ${val > 0 ? 'text-rose-600' : 'text-gray-400'}`}>
-                      {val}%
-                    </span>
-                  </td>
-                );
-              })}
-            </tr>
-            <tr className="bg-slate-50/60 border-t border-slate-100">
-              <td className="px-4 py-2.5 sticky left-0 bg-slate-50/60 z-10">
-                <div className="flex items-center gap-1.5">
-                  <TrendingDown className="w-3.5 h-3.5 text-slate-500" />
-                  <span className="text-xs font-bold text-slate-600">Deslig./Desist. (%)</span>
-                </div>
-              </td>
-              {datas.map(d => {
-                const val = Number(calcularIndicadores(d).desligPercent);
-                return (
-                  <td key={d} className="text-center py-2.5">
-                    <span className={`text-xs font-bold ${val > 0 ? 'text-slate-700' : 'text-gray-400'}`}>
-                      {val}%
-                    </span>
-                  </td>
-                );
-              })}
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-
-      {/* ── SEÇÃO DE OBSERVAÇÕES ── */}
-      <div className="border-t border-gray-100">
-        <button
-          onClick={() => setObsOpen(!obsOpen)}
-          className="w-full flex items-center justify-between px-5 py-3.5 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
-        >
-          <div className="flex items-center gap-2">
-            <MessageSquare className="w-4 h-4 text-gray-500" />
-            <span className="text-sm font-semibold text-gray-700">Observações</span>
-            {observacoes.length > 0 && (
-              <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                {observacoes.length}
-              </span>
-            )}
-          </div>
-          <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${obsOpen ? 'rotate-180' : ''}`} />
-        </button>
-
-        {obsOpen && (
-          <div className="px-5 py-4 space-y-4 bg-white">
-            {/* Input nova observação */}
-            <div className="space-y-2">
-              <textarea
-                value={novaObs}
-                onChange={(e) => setNovaObs(e.target.value)}
-                className="w-full h-20 px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-transparent resize-none transition-all"
-                placeholder="Digite uma observação sobre esta turma..."
-              />
-              <button
-                onClick={handleSalvarObs}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm"
-              >
-                <Plus className="w-4 h-4" />
-                Salvar Observação
-              </button>
-            </div>
-
-            {/* Lista de observações */}
-            {observacoes.length > 0 && (
-              <div className="space-y-2 pt-2 border-t border-gray-100">
-                {observacoes.map((obs: any) => (
-                  <div
-                    key={obs.id}
-                    className="flex items-start justify-between gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100 group/obs"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <Calendar className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                        <span className="text-[10px] text-gray-400 font-medium">
-                          <FormattedDate dateString={obs.created_at} />
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-700 leading-relaxed">{obs.texto}</p>
-                    </div>
-                    <button
-                      onClick={() => handleDeleteObs(obs.id)}
-                      className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-gray-300 hover:text-rose-500 hover:bg-rose-50 transition-all opacity-0 group-hover/obs:opacity-100"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+              <tr className="bg-slate-50/60 border-t border-slate-100">
+                <td className="px-4 py-2.5 sticky left-0 bg-slate-50/60 z-10">
+                  <div className="flex items-center gap-1.5">
+                    <TrendingDown className="w-3.5 h-3.5 text-slate-500" />
+                    <span className="text-xs font-bold text-slate-600">Deslig./Desist. (%)</span>
                   </div>
-                ))}
+                </td>
+                {datas.map(d => {
+                  const val = Number(calcularIndicadores(d).desligPercent);
+                  return (
+                    <td key={d} className="text-center py-2.5">
+                      <span className={`text-xs font-bold ${val > 0 ? 'text-slate-700' : 'text-gray-400'}`}>
+                        {val}%
+                      </span>
+                    </td>
+                  );
+                })}
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        {/* ── SEÇÃO DE OBSERVAÇÕES ── */}
+        <div className="border-t border-gray-100">
+          <button
+            onClick={() => setObsOpen(!obsOpen)}
+            className="w-full flex items-center justify-between px-5 py-3.5 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+          >
+            <div className="flex items-center gap-2">
+              <MessageSquare className="w-4 h-4 text-gray-500" />
+              <span className="text-sm font-semibold text-gray-700">Observações</span>
+              {observacoes.length > 0 && (
+                <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                  {observacoes.length}
+                </span>
+              )}
+            </div>
+            <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${obsOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {obsOpen && (
+            <div className="px-5 py-4 space-y-4 bg-white">
+              <div className="space-y-2">
+                <textarea
+                  value={novaObs}
+                  onChange={(e) => setNovaObs(e.target.value)}
+                  className="w-full h-20 px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-transparent resize-none transition-all"
+                  placeholder="Digite uma observação sobre esta turma..."
+                />
+                <button
+                  onClick={handleSalvarObs}
+                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm"
+                >
+                  <Plus className="w-4 h-4" />
+                  Salvar Observação
+                </button>
               </div>
-            )}
-          </div>
-        )}
+
+              {observacoes.length > 0 && (
+                <div className="space-y-2 pt-2 border-t border-gray-100">
+                  {observacoes.map((obs: any) => (
+                    <div
+                      key={obs.id}
+                      className="flex items-start justify-between gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100 group/obs"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <Calendar className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                          <span className="text-[10px] text-gray-400 font-medium">
+                            <FormattedDate dateString={obs.created_at} />
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-700 leading-relaxed">{obs.texto}</p>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteObs(obs.id)}
+                        className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-gray-300 hover:text-rose-500 hover:bg-rose-50 transition-all opacity-0 group-hover/obs:opacity-100"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -426,9 +530,7 @@ export default function DiarioPresencaPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
-                Operação
-              </label>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Operação</label>
               <div className="relative">
                 <select
                   className="w-full appearance-none bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-transparent cursor-pointer pr-10 transition-all"
@@ -444,9 +546,7 @@ export default function DiarioPresencaPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
-                Turma
-              </label>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Turma</label>
               <div className="relative">
                 <select
                   className="w-full appearance-none bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-transparent cursor-pointer pr-10 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
@@ -465,7 +565,7 @@ export default function DiarioPresencaPage() {
           </div>
         </div>
 
-        {/* ── ESTADO DE CARREGAMENTO ── */}
+        {/* ── LOADING ── */}
         {loadingDados && (
           <div className="flex items-center justify-center py-16">
             <div className="flex flex-col items-center gap-3">
@@ -486,7 +586,6 @@ export default function DiarioPresencaPage() {
           </div>
         )}
 
-        {/* ── TURMAS ── */}
         {!loadingDados && turmasVisiveis.length === 0 && selectedOperacaoId !== 'todos' && (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
@@ -497,6 +596,7 @@ export default function DiarioPresencaPage() {
           </div>
         )}
 
+        {/* ── TURMAS ── */}
         {!loadingDados && turmasVisiveis.map(numTurma => {
           const turmaObj = turmas.find(t => t.numero_turma === numTurma);
           const resp = equipe.find(m => m.matricula === turmaObj?.responsavel_matricula);
