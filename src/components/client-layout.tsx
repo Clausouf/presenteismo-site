@@ -3,8 +3,8 @@
 import React, { useState } from 'react';
 import { AuthProvider, useAuth } from '@/hooks/use-auth';
 import {
-  LayoutDashboard, PlusCircle, CalendarDays, Users, Sliders,
-  LogOut, Menu, X, BookOpen, UserPlus, UserCircle,
+  LayoutDashboard, PlusCircle, CalendarDays,
+  LogOut, Menu, X, BookOpen, UserPlus,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -20,8 +20,8 @@ function LogoIcon({ size = 36 }: { size?: number }) {
       xmlns="http://www.w3.org/2000/svg"
       style={{ flexShrink: 0 }}
     >
-      <circle cx="24" cy="24" r="24" fill="#14532d" />
-      <circle cx="24" cy="24" r="18" fill="#166534" stroke="#4ade80" strokeWidth="1.5" />
+      <circle cx="24" cy="24" r="24" fill="#052e16" />
+      <circle cx="24" cy="24" r="18" fill="#14532d" stroke="#166534" strokeWidth="1.5" />
       <path
         d="M14 24.5L20.5 31L34 17"
         stroke="#4ade80"
@@ -44,7 +44,7 @@ function LogoBlock() {
         </p>
         <p
           className="text-[10px] font-bold tracking-widest uppercase"
-          style={{ color: 'rgba(134,239,172,0.6)' }}
+          style={{ color: 'rgba(134,239,172,0.5)' }}
         >
           Softmarketing
         </p>
@@ -53,43 +53,43 @@ function LogoBlock() {
   );
 }
 
-// ── SIDEBAR INTERNA ──────────────────────────────────────────────────────────
+// ── SIDEBAR ──────────────────────────────────────────────────────────────────
 function AppSidebar() {
   const pathname = usePathname();
   const { logout, user, loading } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
 
+  // Dashboard é item único — ativo quando estiver em qualquer sub-rota /dashboard/*
   const baseMenuItems = [
-    { name: 'Treinamento',        href: '/dashboard/treinamento', icon: LayoutDashboard },
-    { name: 'Recrutamento',       href: '/dashboard/recrutamento', icon: UserCircle      },
-    { name: 'Criar Turmas',       href: '/cadastro',               icon: PlusCircle      },
-    { name: 'Diário de Presença', href: '/turmas',                 icon: BookOpen        },
-    { name: 'Calendário',         href: '/calendario',             icon: CalendarDays    },
-    { name: 'Colaboradores',      href: '/colaboradores',          icon: Users           },
-    { name: 'Configurações',      href: '/configuracoes',          icon: Sliders         },
+    { name: 'Dashboard',          href: '/dashboard/treinamento', icon: LayoutDashboard, matchPrefix: '/dashboard' },
+    { name: 'Criar Turmas',       href: '/cadastro',               icon: PlusCircle,      matchPrefix: '/cadastro'  },
+    { name: 'Diário de Presença', href: '/turmas',                 icon: BookOpen,        matchPrefix: '/turmas'    },
+    { name: 'Calendário',         href: '/calendario',             icon: CalendarDays,    matchPrefix: '/calendario'},
   ];
 
   const isGerente = !loading && user?.perfil?.toLowerCase() === 'gerente';
   const menuItems = isGerente
-    ? [...baseMenuItems, { name: 'Novo Administrador', href: '/criar-adm', icon: UserPlus }]
+    ? [...baseMenuItems, { name: 'Novo Administrador', href: '/criar-adm', icon: UserPlus, matchPrefix: '/criar-adm' }]
     : baseMenuItems;
 
-  const sidebarBg = 'linear-gradient(180deg, #052e16 0%, #0a3d1f 55%, #052e16 100%)';
-  const borderColor = 'rgba(255,255,255,0.07)';
+  const sidebarBg   = 'linear-gradient(180deg, #031a0e 0%, #052e16 50%, #031a0e 100%)';
+  const borderColor = 'rgba(255,255,255,0.06)';
+  const activeGreen = 'linear-gradient(135deg, #166534 0%, #14532d 100%)';
+  const activeShadow = '0 4px 16px rgba(20,83,45,0.5)';
 
   return (
     <>
       {/* ── TOPBAR MOBILE ── */}
       <div
         className="flex items-center justify-between px-4 py-3 md:hidden fixed top-0 left-0 right-0 z-50 shadow-lg"
-        style={{ background: 'linear-gradient(135deg, #052e16 0%, #0a3d1f 100%)' }}
+        style={{ background: '#031a0e' }}
       >
         <LogoBlock />
         <button
           onClick={() => setIsOpen(!isOpen)}
           className="p-1.5 rounded-lg transition-colors"
           style={{ color: 'rgba(255,255,255,0.7)' }}
-          onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.1)')}
+          onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)')}
           onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = 'transparent')}
         >
           {isOpen ? <X size={22} /> : <Menu size={22} />}
@@ -100,7 +100,7 @@ function AppSidebar() {
       {isOpen && (
         <div
           className="fixed inset-0 z-30 md:hidden"
-          style={{ background: 'rgba(0,0,0,0.55)' }}
+          style={{ background: 'rgba(0,0,0,0.6)' }}
           onClick={() => setIsOpen(false)}
         />
       )}
@@ -113,10 +113,7 @@ function AppSidebar() {
           md:translate-x-0 pt-14 md:pt-0
           ${isOpen ? 'translate-x-0' : '-translate-x-full'}
         `}
-        style={{
-          background: sidebarBg,
-          borderRight: `1px solid ${borderColor}`,
-        }}
+        style={{ background: sidebarBg, borderRight: `1px solid ${borderColor}` }}
       >
         {/* HEADER DESKTOP */}
         <div
@@ -126,7 +123,7 @@ function AppSidebar() {
           <LogoBlock />
           <p
             className="text-[10px] font-semibold uppercase tracking-widest mt-3"
-            style={{ color: 'rgba(134,239,172,0.45)' }}
+            style={{ color: 'rgba(134,239,172,0.35)' }}
           >
             Recrutamento &amp; Treinamento
           </p>
@@ -138,15 +135,15 @@ function AppSidebar() {
             className="px-5 py-3.5 flex items-center gap-3"
             style={{
               borderBottom: `1px solid ${borderColor}`,
-              background: 'rgba(0,0,0,0.25)',
+              background: 'rgba(0,0,0,0.3)',
             }}
           >
             <div
               className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 font-bold text-sm"
               style={{
-                background: 'rgba(74,222,128,0.15)',
+                background: 'rgba(74,222,128,0.12)',
                 color: '#4ade80',
-                border: '1px solid rgba(74,222,128,0.25)',
+                border: '1px solid rgba(74,222,128,0.2)',
               }}
             >
               {(user.nome ?? user.email ?? '?').charAt(0).toUpperCase()}
@@ -171,7 +168,7 @@ function AppSidebar() {
           style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}
         >
           {menuItems.map((item) => {
-            const isActive = pathname.startsWith(item.href);
+            const isActive = pathname.startsWith(item.matchPrefix);
             const Icon = item.icon;
             return (
               <Link
@@ -182,34 +179,34 @@ function AppSidebar() {
                 style={
                   isActive
                     ? {
-                        background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                        background: activeGreen,
                         color: '#ffffff',
-                        boxShadow: '0 4px 16px rgba(22,163,74,0.3)',
+                        boxShadow: activeShadow,
                       }
-                    : { color: 'rgba(255,255,255,0.5)' }
+                    : { color: 'rgba(255,255,255,0.48)' }
                 }
                 onMouseEnter={(e) => {
                   if (!isActive) {
-                    (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.07)';
-                    (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.9)';
+                    (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)';
+                    (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.85)';
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!isActive) {
                     (e.currentTarget as HTMLElement).style.background = 'transparent';
-                    (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.5)';
+                    (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.48)';
                   }
                 }}
               >
                 {isActive && (
                   <span
                     className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full"
-                    style={{ background: '#86efac' }}
+                    style={{ background: '#4ade80' }}
                   />
                 )}
                 <Icon
                   size={17}
-                  style={{ color: isActive ? '#ffffff' : 'rgba(255,255,255,0.38)' }}
+                  style={{ color: isActive ? '#86efac' : 'rgba(255,255,255,0.35)' }}
                   className="flex-shrink-0"
                 />
                 <span className="truncate">{item.name}</span>
@@ -223,20 +220,20 @@ function AppSidebar() {
           className="p-3"
           style={{
             borderTop: `1px solid ${borderColor}`,
-            background: 'rgba(0,0,0,0.2)',
+            background: 'rgba(0,0,0,0.25)',
           }}
         >
           <button
             onClick={() => { logout(); setIsOpen(false); }}
             className="flex items-center gap-3 w-full px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200"
-            style={{ color: 'rgba(252,165,165,0.75)' }}
+            style={{ color: 'rgba(252,165,165,0.7)' }}
             onMouseEnter={(e) => {
               (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.1)';
               (e.currentTarget as HTMLElement).style.color = '#fca5a5';
             }}
             onMouseLeave={(e) => {
               (e.currentTarget as HTMLElement).style.background = 'transparent';
-              (e.currentTarget as HTMLElement).style.color = 'rgba(252,165,165,0.75)';
+              (e.currentTarget as HTMLElement).style.color = 'rgba(252,165,165,0.7)';
             }}
           >
             <LogOut size={17} className="flex-shrink-0" />
@@ -257,7 +254,7 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
     return (
       <div
         className="min-h-screen w-full flex items-center justify-center"
-        style={{ background: '#052e16' }}
+        style={{ background: '#031a0e' }}
       >
         <div className="flex flex-col items-center gap-3">
           <div
