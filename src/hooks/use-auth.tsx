@@ -5,7 +5,6 @@ import { supabase } from '@/lib/supabase';
 import { User } from '@supabase/supabase-js';
 import { useRouter, usePathname } from 'next/navigation';
 
-// Tipo estendido com o perfil real do Supabase
 export type AppUser = User & {
   perfil?: string | null;
   nome?: string | null;
@@ -17,7 +16,6 @@ const AuthContext = createContext<{
   logout: () => Promise<void>;
 }>({ user: null, loading: true, logout: async () => {} });
 
-// Busca o role na tabela profile
 async function fetchPerfil(userId: string): Promise<{ role: string | null; nome: string | null }> {
   const { data, error } = await supabase
     .from('profile')
@@ -48,12 +46,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    // Checa sessão atual
     supabase.auth.getSession().then(({ data: { session } }) => {
       hydrateUser(session?.user ?? null);
     });
 
-    // Escuta mudanças de estado (Login / Logout)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session) {
         setUser(null);
