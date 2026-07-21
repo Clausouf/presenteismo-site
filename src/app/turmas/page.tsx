@@ -31,22 +31,6 @@ const REGISTRO_COLORS: Record<string, string> = {
   '':                      'bg-white text-slate-400 border-slate-200',
 };
 
-// ── FUNÇÃO AUXILIAR PARA GERAR DATAS ────────────────────────────────────────
-function gerarArrayDatas(inicio: string, fim: string): string[] {
-  if (!inicio || !fim) return [];
-  const arr: string[] = [];
-  let dt = new Date(inicio + 'T00:00:00');
-  const dtFim = new Date(fim + 'T00:00:00');
-  while (dt <= dtFim) {
-    const ano = dt.getFullYear();
-    const mes = String(dt.getMonth() + 1).padStart(2, '0');
-    const dia = String(dt.getDate()).padStart(2, '0');
-    arr.push(`${ano}-${mes}-${dia}`);
-    dt.setDate(dt.getDate() + 1);
-  }
-  return arr;
-}
-
 // ── MODAL DE DADOS DO OPERADOR ───────────────────────────────────────────────
 function OperadorModal({ colab, onClose }: { colab: any; onClose: () => void }) {
   useEffect(() => {
@@ -699,229 +683,215 @@ export default function DiarioPresencaPage() {
   const [dadosDasTurmas, setDadosDasTurmas] = useState<Record<string, any>>({});
   const [loadingDados, setLoadingDados] = useState(false);
 
-  useEffect(() => {
-    async function fetchInitialData() {
-      try {
-        const [resOp, resTurmas, resEquipe] = await Promise.all([
-          supabase.from('operacoes').select('*'),
-          supabase.from('turmas').select('*'),
-          supabase.from('equipe').select('*'),
-        ]);
-        if (resOp.data) setOperacoes(resOp.data);
-        if (resTurmas.data) setTurmas(resTurmas.data);
-        if (resEquipe.data) setEquipe(resEquipe.data);
-      } catch (err) {
-        console.error('Erro ao carregar dados iniciais:', err);
-      }
-    }
-    fetchInitialData();
-  }, []);
-
   async function carregarDados() {
     if (selectedOperacaoId === 'todos') { setDadosDasTurmas({}); return; }
     setLoadingDados(true);
-    try {
-      const turmasDaOp = selectedTurmaNum
-        ? turmas.filter(t => t.numero_turma === selectedTurmaNum)
-        : turmas.filter(t => String(t.operacao_id) === String(selectedOperacaoId));
-
-      const novoMap: Record<string, any> = {};
-
-      for (const t of turmasDaOp) {
-        const [colabsRes, presRes, obsRes] = await Promise.all([
-          supabase.from('colaboradores').select('*').eq('numero_turma', t.numero_turma),
-          supabase.from('presencas').select('*').eq('numero_turma', t.numero_turma),
-          supabase.from('turma_observacoes').select('*').eq('numero_turma', t.numero_turma).order('created_at', { ascending: false }),
-        ]);
-
-        const presencasMap: Record<string, any> = {};
-        if (presRes.data) {
-          presRes.data.forEach((p: any) => {
-            presencasMap[`${p.matricula}_${p.data}`] = p;
-          });
-        }
-
-        const resp = equipe.find(e => e.id === t.responsavel_id);
-
-        novoMap[t.numero_turma] = {
-          turma: t,
-          responsavelNome: resp ? resp.nome : '',
-          colaboradores: colabsRes.data || [],
-          presencas: presencasMap,
-          observacoes: obsRes.data || [],
-        };
-      }
-
-      setDadosDasTurmas(novoMap);
-    } catch (err) {
-      console.error('Erro ao carregar dados das turmas:', err);
-    } finally {
-      setLoadingDados(false);
+    const turmasDaOp = selectedTurmaNum
+      ? turmas.filter(t => t.numero_turma === selectedTurmaNum)
+      : turmas.filter(t => t.operacao_id === Number(selectedOperacaoId));
+    const novosDados: any = {};
+    for (const t of turmasDaOp) {
+      const [colabs, regs, obs] = await Promise.all([
+        supabase.from('colaboradores').select('*').eq('numero_turma', t.numero_turma),
+        supabase.from('diario_presenca').select('*').eq('numero_turma', t.numero_turma),
+        supabase.from('turma_observacoes').select('*').eq('numero_turma', t.numero_turma).order('created_at', { ascending: false }),
+      ]);
+      const mapaPresencas: any = {};
+      regs.data?.forEach(r => (mapaPresencas[`${r.matricula}_${r.data}`] = r));
+      novosDados[t.numero_turma] = { colabs: colabs.data || [], presencas: mapaPresencas, obs: obs.data || [] };
     }
+    setDadosDasTurmas(novosDados);
+    setLoadingDados(false);
   }
 
   useEffect(() => {
-    carregarDados();
-  }, [selectedOperacaoId, selectedTurmaNum, turmas]);
-
-  const handleStatusChange = async (numeroTurma: string, novoStatus: string) => {
-    const { error } = await supabase
-      .from('turmas')
-      .update({ status: novoStatus })
-      .eq('numero_turma', numeroTurma);
-
-    if (error) {
-      alert('Erro ao atualizar status: ' + error.message);
-      return;
+    async function init() {
+      const { data: o } = await supabase.from('operacoes').select('*');
+      const { data: t } = await supabase.from('turmas').select('*');
+      const { data: e } = await supabase.from('equipe').select('*');
+      if (o) setOperacoes(o);
+      if (t) setTurmas(t);
+      if (e) setEquipe(e);
     }
+    init();
+    const channel = supabase
+      .channel('turmas-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'turmas' }, () => init())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
 
-    setTurmas(turmas.map(t => t.numero_turma === numeroTurma ? { ...t, status: novoStatus } : t));
+  useEffect(() => { carregarDados(); }, [selectedOperacaoId, selectedTurmaNum, turmas]);
+
+  const handleUpdatePresence = async (turmaNum: string, matricula: string, nome: string, dataStr: string, status: string) => {
+    if (status === '') {
+      const { error } = await supabase.from('diario_presenca').delete().eq('numero_turma', turmaNum).eq('matricula', matricula).eq('data', dataStr);
+      if (error) { alert('Erro ao deletar: ' + error.message); return; }
+    } else {
+      const { error } = await supabase.from('diario_presenca').upsert({ numero_turma: turmaNum, matricula, colaborador_nome: nome, data: dataStr, tipo_registro: status });
+      if (error) { alert('Erro ao salvar: ' + error.message); return; }
+    }
+    setDadosDasTurmas(prev => {
+      const newData = { ...prev };
+      if (status === '') delete newData[turmaNum].presencas[`${matricula}_${dataStr}`];
+      else newData[turmaNum].presencas[`${matricula}_${dataStr}`] = { ...newData[turmaNum].presencas[`${matricula}_${dataStr}`], tipo_registro: status };
+      return { ...newData };
+    });
   };
 
-  const handleDeleteTurma = async (numeroTurma: string) => {
-    if (!confirm(`Tem certeza que deseja excluir a turma ${numeroTurma}?`)) return;
-    const { error } = await supabase.from('turmas').delete().eq('numero_turma', numeroTurma);
-    if (error) {
-      alert('Erro ao excluir turma: ' + error.message);
-      return;
-    }
-    setTurmas(turmas.filter(t => t.numero_turma !== numeroTurma));
+  const handleStatusChange = async (turmaNum: string, novoStatus: string) => {
+    const { error } = await supabase.from('turmas').update({ status: novoStatus }).eq('numero_turma', turmaNum);
+    if (error) { alert('Erro ao salvar no banco: ' + error.message); return; }
+    setTurmas(prev => prev.map(t => t.numero_turma === turmaNum ? { ...t, status: novoStatus } : t));
   };
 
-  const handleUpdatePresenca = async (numeroTurma: string, matricula: string, nome: string, data: string, tipoRegistro: string) => {
+  const handleDeleteTurma = async (turmaNum: string) => {
+    if (!confirm(`TEM CERTEZA? Isso excluirá permanentemente a Turma ${turmaNum} e todos os seus dados vinculados.`)) return;
     try {
-      const { error } = await supabase
-        .from('presencas')
-        .upsert({
-          numero_turma: numeroTurma,
-          matricula: matricula,
-          nome: nome,
-          data: data,
-          tipo_registro: tipoRegistro,
-        }, { onConflict: 'numero_turma,matricula,data' });
-
-      if (error) throw error;
-
-      setDadosDasTurmas((prev: any) => {
-        const atual = prev[numeroTurma];
-        if (!atual) return prev;
-        return {
-          ...prev,
-          [numeroTurma]: {
-            ...atual,
-            presencas: {
-              ...atual.presencas,
-              [`${matricula}_${data}`]: { tipo_registro: tipoRegistro }
-            }
-          }
-        };
-      });
+      const { error: err1 } = await supabase.from('diario_presenca').delete().eq('numero_turma', turmaNum);
+      if (err1) throw new Error(`Erro na tabela diario_presenca: ${err1.message}`);
+      const { error: err2 } = await supabase.from('colaboradores').delete().eq('numero_turma', turmaNum);
+      if (err2) throw new Error(`Erro na tabela colaboradores: ${err2.message}`);
+      const { error: err3 } = await supabase.from('turma_observacoes').delete().eq('numero_turma', turmaNum);
+      if (err3) throw new Error(`Erro na tabela turma_observacoes: ${err3.message}`);
+      const { error: err4 } = await supabase.from('turmas').delete().eq('numero_turma', turmaNum);
+      if (err4) throw new Error(`Erro na tabela turmas: ${err4.message}`);
+      setTurmas(prev => prev.filter(t => t.numero_turma !== turmaNum));
+      alert('Turma excluída com sucesso.');
     } catch (err: any) {
-      console.error(err);
-      alert('Erro ao salvar presença: ' + err.message);
+      console.error('Erro detalhado:', err);
+      alert(err.message);
     }
   };
 
   const turmasFiltradas = selectedOperacaoId === 'todos'
     ? []
-    : selectedTurmaNum
-    ? turmas.filter(t => t.numero_turma === selectedTurmaNum)
-    : turmas.filter(t => String(t.operacao_id) === String(selectedOperacaoId));
+    : turmas.filter(t => t.operacao_id === Number(selectedOperacaoId));
+
+  const turmasVisiveis = Object.keys(dadosDasTurmas);
 
   return (
-    <div className="min-h-screen bg-gray-50/50 p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
-        
-        {/* Cabeçalho da Página */}
-        <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-bold text-gray-800 tracking-tight">Diário de Presença</h1>
-            <p className="text-xs text-gray-500 mt-0.5">Acompanhamento diário de turmas, frequências e indicadores</p>
+    <div className="min-h-screen bg-gray-50 p-4 md:p-6">
+      <div className="max-w-full mx-auto space-y-5">
+
+        {/* ── BARRA DE FILTROS ── */}
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+              <BookOpen className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <h1 className="text-base font-bold text-gray-900">Diário de Presença</h1>
+              <p className="text-xs text-gray-400">Selecione uma operação para visualizar as turmas</p>
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Operação</label>
-              <select
-                value={selectedOperacaoId}
-                onChange={(e) => {
-                  setSelectedOperacaoId(e.target.value);
-                  setSelectedTurmaNum('');
-                }}
-                className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-blue-300"
-              >
-                <option value="todos">Selecione uma operação...</option>
-                {operacoes.map(op => (
-                  <option key={op.id} value={op.id}>{op.nome}</option>
-                ))}
-              </select>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Operação</label>
+              <div className="relative">
+                <select
+                  className="w-full appearance-none bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-transparent cursor-pointer pr-10 transition-all"
+                  onChange={(e) => { setSelectedOperacaoId(e.target.value); setSelectedTurmaNum(''); }}
+                >
+                  <option value="todos">Selecione uma Operação...</option>
+                  {operacoes.map(op => (
+                    <option key={op.id} value={op.id}>{op.nome}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+              </div>
             </div>
 
-            {selectedOperacaoId !== 'todos' && (
-              <div>
-                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Turma</label>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Turma</label>
+              <div className="relative">
                 <select
+                  className="w-full appearance-none bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-transparent cursor-pointer pr-10 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   value={selectedTurmaNum}
                   onChange={(e) => setSelectedTurmaNum(e.target.value)}
-                  className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-blue-300"
+                  disabled={selectedOperacaoId === 'todos'}
                 >
-                  <option value="">Todas as turmas</option>
-                  {turmas
-                    .filter(t => String(t.operacao_id) === String(selectedOperacaoId))
-                    .map(t => (
-                      <option key={t.numero_turma} value={t.numero_turma}>Turma {t.numero_turma}</option>
-                    ))}
+                  <option value="">Todas as Turmas</option>
+                  {turmasFiltradas.map(t => (
+                    <option key={t.numero_turma} value={t.numero_turma}>Turma {t.numero_turma}</option>
+                  ))}
                 </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
               </div>
-            )}
+            </div>
           </div>
         </div>
 
-        {/* Conteúdo Principal */}
-        {selectedOperacaoId === 'todos' ? (
-          <div className="bg-white rounded-2xl p-12 border border-gray-200 shadow-sm text-center space-y-3">
-            <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto">
-              <BookOpen className="w-6 h-6" />
+        {/* ── LOADING ── */}
+        {loadingDados && (
+          <div className="flex items-center justify-center py-16">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
+              <p className="text-sm text-gray-500 font-medium">Carregando turmas...</p>
             </div>
-            <h3 className="text-base font-bold text-gray-800">Nenhuma operação selecionada</h3>
-            <p className="text-xs text-gray-500 max-w-sm mx-auto">
-              Selecione uma operação acima para visualizar as turmas e o diário de presença correspondente.
-            </p>
-          </div>
-        ) : loadingDados ? (
-          <div className="bg-white rounded-2xl p-12 border border-gray-200 shadow-sm text-center space-y-3">
-            <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
-            <p className="text-xs font-semibold text-gray-500">Carregando turmas e dados...</p>
-          </div>
-        ) : turmasFiltradas.length === 0 ? (
-          <div className="bg-white rounded-2xl p-12 border border-gray-200 shadow-sm text-center space-y-3">
-            <h3 className="text-base font-bold text-gray-800">Nenhuma turma encontrada</h3>
-            <p className="text-xs text-gray-500">Não há turmas cadastradas para os filtros selecionados.</p>
-          </div>
-        ) : (
-          <div>
-            {turmasFiltradas.map(turma => {
-              const dados = dadosDasTurmas[turma.numero_turma];
-              if (!dados) return null;
-              return (
-                <TabelaTurma
-                  key={turma.numero_turma}
-                  turma={turma}
-                  responsavelNome={dados.responsavelNome}
-                  colaboradores={dados.colaboradores}
-                  presencas={dados.presencas}
-                  obsInicial={dados.observacoes}
-                  onUpdate={handleUpdatePresenca}
-                  onStatusChange={handleStatusChange}
-                  onDeleteTurma={handleDeleteTurma}
-                  onRefresh={carregarDados}
-                />
-              );
-            })}
           </div>
         )}
+
+        {/* ── ESTADO VAZIO ── */}
+        {!loadingDados && selectedOperacaoId === 'todos' && (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
+              <BookOpen className="w-8 h-8 text-gray-300" />
+            </div>
+            <p className="text-base font-semibold text-gray-500">Nenhuma operação selecionada</p>
+            <p className="text-sm text-gray-400 mt-1">Selecione uma operação no filtro acima para visualizar as turmas.</p>
+          </div>
+        )}
+
+        {!loadingDados && turmasVisiveis.length === 0 && selectedOperacaoId !== 'todos' && (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
+              <AlertCircle className="w-8 h-8 text-gray-300" />
+            </div>
+            <p className="text-base font-semibold text-gray-500">Nenhuma turma encontrada</p>
+            <p className="text-sm text-gray-400 mt-1">Não há turmas com dados para esta operação.</p>
+          </div>
+        )}
+
+        {/* ── TURMAS ── */}
+        {!loadingDados && turmasVisiveis.map(numTurma => {
+          const turmaObj = turmas.find(t => t.numero_turma === numTurma);
+          const resp = equipe.find(m => m.matricula === turmaObj?.responsavel_matricula);
+          if (!turmaObj || !dadosDasTurmas[numTurma]) return null;
+          return (
+            <TabelaTurma
+              key={numTurma}
+              turma={turmaObj}
+              responsavelNome={resp?.nome || ''}
+              colaboradores={dadosDasTurmas[numTurma].colabs}
+              presencas={dadosDasTurmas[numTurma].presencas}
+              obsInicial={dadosDasTurmas[numTurma].obs}
+              onUpdate={handleUpdatePresence}
+              onStatusChange={handleStatusChange}
+              onDeleteTurma={handleDeleteTurma}
+              onRefresh={async () => {
+                const { data: t } = await supabase.from('turmas').select('*');
+                if (t) setTurmas(t);
+                carregarDados();
+              }}
+            />
+          );
+        })}
 
       </div>
     </div>
   );
+}
+
+// ── UTILITÁRIO ───────────────────────────────────────────────────────────────
+function gerarArrayDatas(inicio: string, fim: string) {
+  const arr = [];
+  let d = new Date(inicio + 'T00:00:00');
+  const f = new Date(fim + 'T00:00:00');
+  while (d <= f) {
+    arr.push(d.toISOString().split('T')[0]);
+    d.setDate(d.getDate() + 1);
+  }
+  return arr;
 }
