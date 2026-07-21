@@ -270,44 +270,51 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       metricsAll.filter(m => m.category === tipo).map(m => m.turma)
     );
 
-    // ─── PASSO 3: ABS/TO por turma com denominador = total da turma ──────────
+    // ─── PASSO 3: ABS/TO por turma ───────────────────────────────────────────────
+    // ABS: faltas / total de dias esperados da turma  (denominador = dias)
+    // TO : operadores desligados / total de operadores da turma (denominador = pessoas)
     const turmasUnicas = [...turmasComCategoria];
-
     const rankingTurmas = turmasUnicas.map(tNum => {
       const todosDaTurma     = metricsAll.filter(m => m.turma === tNum);
       const categoriaDaTurma = todosDaTurma.filter(m => m.category === tipo);
-
+      // ABS — denominador continua sendo dias
       const totalDiasEsperadosTurma = todosDaTurma.reduce((acc, m) => acc + m.totalDiasEsperados, 0);
       const absCategoria = categoriaDaTurma.reduce((acc, m) => acc + m.countAbs, 0);
-      const toCategoria  = categoriaDaTurma.reduce((acc, m) => acc + m.countTO, 0);
-
+      // TO — denominador é o nº de operadores da turma, não dias
+      const totalOperadoresTurma = todosDaTurma.length;
+      const operadoresDesligados = categoriaDaTurma.filter(m => m.countTO > 0).length;
       return {
         turma: tNum,
         op: todosDaTurma[0]?.op || 'Sem Operação',
         abs: totalDiasEsperadosTurma > 0 ? (absCategoria / totalDiasEsperadosTurma) * 100 : 0,
-        to:  totalDiasEsperadosTurma > 0 ? (toCategoria  / totalDiasEsperadosTurma) * 100 : 0,
+        to:  totalOperadoresTurma  > 0 ? (operadoresDesligados / totalOperadoresTurma) * 100 : 0,
         _absRaw:  absCategoria,
-        _toRaw:   toCategoria,
+        _toRaw:   operadoresDesligados,
         _diasRaw: totalDiasEsperadosTurma,
+        _opRaw:   totalOperadoresTurma,
       };
     }).sort((a, b) => b.abs - a.abs);
 
-    // ─── PASSO 4: métricas globais ────────────────────────────────────────────
+    // ─── PASSO 4: métricas globais ────────────────────────────────────────────────
+    // ABS global: total de faltas / total de dias esperados
+    // TO  global: total de operadores desligados / total de operadores
     const totalDiasGlobal = rankingTurmas.reduce((acc, t) => acc + t._diasRaw, 0);
-    const totalAbsGlobal  = rankingTurmas.reduce((acc, t) => acc + t._absRaw, 0);
-    const totalToGlobal   = rankingTurmas.reduce((acc, t) => acc + t._toRaw,  0);
+    const totalAbsGlobal  = rankingTurmas.reduce((acc, t) => acc + t._absRaw,  0);
+    const totalOpGlobal   = rankingTurmas.reduce((acc, t) => acc + t._opRaw,   0);
+    const totalToGlobal   = rankingTurmas.reduce((acc, t) => acc + t._toRaw,   0);
 
-    // ─── PASSO 5: ranking por operação ───────────────────────────────────────
+    // ─── PASSO 5: ranking por operação ───────────────────────────────────────────
     const opsUnicas = [...new Set(rankingTurmas.map(t => t.op))];
     const ranking = opsUnicas.map(op => {
       const turmasDaOp = rankingTurmas.filter(t => t.op === op);
       const opDias = turmasDaOp.reduce((acc, t) => acc + t._diasRaw, 0);
-      const opAbs  = turmasDaOp.reduce((acc, t) => acc + t._absRaw, 0);
-      const opTo   = turmasDaOp.reduce((acc, t) => acc + t._toRaw,  0);
+      const opAbs  = turmasDaOp.reduce((acc, t) => acc + t._absRaw,  0);
+      const opOp   = turmasDaOp.reduce((acc, t) => acc + t._opRaw,   0);
+      const opTo   = turmasDaOp.reduce((acc, t) => acc + t._toRaw,   0);
       return {
         nome: op,
         abs: opDias > 0 ? (opAbs / opDias) * 100 : 0,
-        to:  opDias > 0 ? (opTo  / opDias) * 100 : 0,
+        to:  opOp  > 0 ? (opTo  / opOp)  * 100 : 0,
       };
     });
 
@@ -341,7 +348,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       ['Turmas Ativas', filteredTurmas.filter((t: any) => t.status === 'Em Andamento').length],
       ['Turmas Finalizadas', filteredTurmas.filter((t: any) => t.status === 'Finalizada').length],
       ['ABS (%)', parseFloat((totalDiasGlobal > 0 ? (totalAbsGlobal / totalDiasGlobal) * 100 : 0).toFixed(2))],
-      ['TO (%)', parseFloat((totalDiasGlobal > 0 ? (totalToGlobal / totalDiasGlobal) * 100 : 0).toFixed(2))],
+      ['TO (%)', parseFloat((totalOpGlobal   > 0 ? (totalToGlobal  / totalOpGlobal)  * 100 : 0).toFixed(2))],
       [],
       ['RANKING POR OPERAÇÃO'],
       ['Operação', 'ABS (%)', 'TO (%)'],
@@ -380,7 +387,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       ativas:      filteredTurmas.filter((t: any) => t.status === 'Em Andamento').length,
       finalizadas: filteredTurmas.filter((t: any) => t.status === 'Finalizada').length,
       abs: totalDiasGlobal > 0 ? (totalAbsGlobal / totalDiasGlobal) * 100 : 0,
-      to:  totalDiasGlobal > 0 ? (totalToGlobal  / totalDiasGlobal) * 100 : 0,
+      to:  totalOpGlobal   > 0 ? (totalToGlobal  / totalOpGlobal)  * 100 : 0,
       ranking,
       rankingTurmas,
       salaStats,
@@ -697,7 +704,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
             <div className="mb-3">
               <h2 className="text-sm font-bold text-gray-800">Ocupação de Salas</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Dias de uso no período</p>
+              <p className="text-xs text-gray-400 mt-0.5">Distribuição de dias ocupados por sala</p>
             </div>
             <div className="h-52">
               <ResponsiveContainer width="100%" height="100%">
@@ -706,82 +713,54 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
                     data={data.salaStats}
                     dataKey="dias"
                     nameKey="name"
-                    cx="40%"
+                    cx="50%"
                     cy="50%"
-                    outerRadius={75}
-                    innerRadius={40}
-                    paddingAngle={3}
-                    label={({ value }: { value: number }) => `${value}d`}
+                    innerRadius={50}
+                    outerRadius={80}
+                    paddingAngle={2}
+                    label={({ name, percent }: any) => `${name} (${(percent * 100).toFixed(0)}%)`}
                     labelLine={false}
                   >
-                    {data.salaStats.map((_: any, i: number) => (
-                      <Cell key={i} fill={SALA_COLORS[i % SALA_COLORS.length]} />
+                    {data.salaStats.map((_, index) => (
+                      <Cell key={`cell-${index}`} fill={SALA_COLORS[index % SALA_COLORS.length]} />
                     ))}
                   </Pie>
                   <Tooltip content={<CustomPieTooltip />} />
-                  <Legend
-                    layout="vertical"
-                    align="right"
-                    verticalAlign="middle"
-                    iconType="circle"
-                    iconSize={8}
-                    formatter={(value: string) => (
-                      <span className="text-xs text-gray-600">{value}</span>
-                    )}
-                  />
                 </PieChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Tabela de ensalamento */}
+          {/* Lista de salas */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
             <div className="mb-3">
-              <h2 className="text-sm font-bold text-gray-800">Detalhes do Ensalamento</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Salas em uso no período filtrado</p>
+              <h2 className="text-sm font-bold text-gray-800">Detalhes das Salas</h2>
+              <p className="text-xs text-gray-400 mt-0.5">Turmas alocadas em cada sala no período</p>
             </div>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left py-2 px-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Sala</th>
-                  <th className="text-center py-2 px-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Dias</th>
-                  <th className="text-left py-2 px-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Turmas</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {data.salaStats.map((s: any, i: number) => (
-                  <tr key={i} className="hover:bg-gray-50 transition-colors">
-                    <td className="py-3 px-2">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: SALA_COLORS[i % SALA_COLORS.length] }}
-                        />
-                        <span className="font-medium text-gray-800">{s.name}</span>
-                      </div>
-                    </td>
-                    <td className="py-3 px-2 text-center">
-                      <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-blue-50 text-blue-700 text-xs font-bold">
-                        {s.dias}
-                      </span>
-                    </td>
-                    <td className="py-3 px-2">
-                      <div className="flex flex-wrap gap-1">
-                        {s.turmas.map((t: string) => (
-                          <span
-                            key={t}
-                            className="px-2 py-0.5 rounded-md text-xs font-medium"
-                            style={{ backgroundColor: cor.light, color: cor.text }}
-                          >
-                            {t}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="space-y-3 overflow-y-auto max-h-52 pr-1">
+              {data.salaStats.map((s: any, i: number) => (
+                <div key={i} className="flex items-center justify-between p-2.5 rounded-lg bg-gray-50 border border-gray-100">
+                  <div className="flex items-center gap-2.5">
+                    <span
+                      className="w-3 h-3 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: SALA_COLORS[i % SALA_COLORS.length] }}
+                    />
+                    <div>
+                      <p className="text-xs font-semibold text-gray-800">{s.name}</p>
+                      <p className="text-[11px] text-gray-400">
+                        Turmas: {s.turmas.length > 0 ? s.turmas.join(', ') : 'Nenhuma'}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-bold text-gray-700 bg-white px-2 py-1 rounded border border-gray-200 shadow-xs">
+                    {s.dias} {s.dias === 1 ? 'dia' : 'dias'}
+                  </span>
+                </div>
+              ))}
+              {data.salaStats.length === 0 && (
+                <p className="text-xs text-gray-400 text-center py-8">Nenhuma sala utilizada no período.</p>
+              )}
+            </div>
           </div>
         </div>
       </div>
