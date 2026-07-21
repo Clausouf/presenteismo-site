@@ -146,7 +146,6 @@ function downloadBlob(blob: Blob, filename: string) {
   a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
 }
-// ─────────────────────────────────────────────────────────────────────────────
 
 // Tooltip customizado — gráfico de barras
 const CustomBarTooltip = ({ active, payload, label }: any) => {
@@ -242,14 +241,15 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
         const totalDiasEsperados = logs.length;
         const logsNormalized = logs.map((l: any) => normalize(l.tipo_registro));
 
-        const countAbs      = logsNormalized.filter((t: string) => t.includes('falta')).length;
+        // ATUALIZAÇÃO: Incluindo desligamento e desistência no cálculo de ABS
+        const countAbs = logsNormalized.filter((t: string) =>
+          t.includes('falta') || t.includes('desligamento') || t.includes('desistencia')
+        ).length;
         const countPresenca = logsNormalized.filter((t: string) => t.includes('presenca') || t.includes('presente')).length;
-        const countTO       = logsNormalized.filter((t: string) =>
+        const countTO = logsNormalized.filter((t: string) =>
           ['desistencia', 'desligamento', 'desligamento a pedido'].includes(t)
         ).length;
 
-        // Recrutamento: zero presenças no período (nunca compareceu)
-        // Treinamento : pelo menos uma presença no período
         const category: 'recrutamento' | 'treinamento' =
           countPresenca === 0 && countAbs > 0 ? 'recrutamento' : 'treinamento';
 
@@ -274,18 +274,15 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
     );
 
     // ─── PASSO 3: ABS/TO por turma ───────────────────────────────────────────────
-    // ABS: faltas / total de dias esperados da turma  (denominador = dias)
-    // TO : operadores desligados / total de operadores da turma (denominador = pessoas)
     const turmasUnicas = [...turmasComCategoria];
     const rankingTurmas = turmasUnicas.map(tNum => {
       const todosDaTurma     = metricsAll.filter(m => m.turma === tNum);
       const categoriaDaTurma = tipo === 'consolidado'
         ? todosDaTurma
         : todosDaTurma.filter(m => m.category === tipo);
-      // ABS — denominador continua sendo dias
+      
       const totalDiasEsperadosTurma = todosDaTurma.reduce((acc, m) => acc + m.totalDiasEsperados, 0);
       const absCategoria = categoriaDaTurma.reduce((acc, m) => acc + m.countAbs, 0);
-      // TO — denominador é o nº de operadores da turma, não dias
       const totalOperadoresTurma = todosDaTurma.length;
       const operadoresDesligados = categoriaDaTurma.filter(m => m.countTO > 0).length;
       return {
@@ -301,8 +298,6 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
     }).sort((a, b) => b.abs - a.abs);
 
     // ─── PASSO 4: métricas globais ────────────────────────────────────────────────
-    // ABS global: total de faltas / total de dias esperados
-    // TO  global: total de operadores desligados / total de operadores
     const totalDiasGlobal = rankingTurmas.reduce((acc, t) => acc + t._diasRaw, 0);
     const totalAbsGlobal  = rankingTurmas.reduce((acc, t) => acc + t._absRaw,  0);
     const totalOpGlobal   = rankingTurmas.reduce((acc, t) => acc + t._opRaw,   0);
@@ -400,7 +395,6 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
     };
   }, [loading, raw, tipo, selectedMonth, selectedOp, selectedTurma]);
 
-  // ─── Handler de exportação ────────────────────────────────────────────────
   function handleExport() {
     if (!data) return;
     const blob = buildXlsx([
@@ -439,7 +433,6 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
             <h1 className="text-xl font-bold text-gray-900">Dashboard de Presença</h1>
             <p className="text-sm text-gray-500 mt-0.5">Acompanhamento de absenteísmo e turnover</p>
           </div>
-          {/* Tabs de navegação */}
           <div className="flex rounded-xl overflow-hidden border border-gray-200 bg-gray-100 p-1 gap-1">
             <Link
               href="/dashboard/treinamento"
@@ -718,7 +711,6 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
 
         {/* ── Salas ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {/* Donut chart — ocupação */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
             <div className="mb-3">
               <h2 className="text-sm font-bold text-gray-800">Ocupação de Salas</h2>
@@ -759,7 +751,6 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
             </div>
           </div>
 
-          {/* Lista de salas */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
             <div className="mb-3">
               <h2 className="text-sm font-bold text-gray-800">Detalhes das Salas</h2>
