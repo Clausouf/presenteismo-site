@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
-// Paleta de cores por operação (rotativa)
+// Paleta de cores por operação (rotativa) - Em Andamento
 const OP_COLORS = [
   { bg: '#dbeafe', text: '#1d4ed8', border: '#93c5fd', dot: '#3b82f6' },
   { bg: '#d1fae5', text: '#065f46', border: '#6ee7b7', dot: '#10b981' },
@@ -13,9 +13,20 @@ const OP_COLORS = [
   { bg: '#e0f2fe', text: '#0c4a6e', border: '#7dd3fc', dot: '#0ea5e9' },
 ];
 
-function getOpColor(opNome: string, allOps: string[]) {
+// Paleta de cores mais escura para turmas Finalizadas
+const OP_COLORS_FINISHED = [
+  { bg: '#1e40af', text: '#ffffff', border: '#1d4ed8', dot: '#93c5fd' },
+  { bg: '#064e3b', text: '#ffffff', border: '#065f46', dot: '#6ee7b7' },
+  { bg: '#3b0764', text: '#ffffff', border: '#4c1d95', dot: '#c4b5fd' },
+  { bg: '#78350f', text: '#ffffff', border: '#92400e', dot: '#fcd34d' },
+  { bg: '#7f1d1d', text: '#ffffff', border: '#991b1b', dot: '#fca5a5' },
+  { bg: '#0369a1', text: '#ffffff', border: '#0c4a6e', dot: '#7dd3fc' },
+];
+
+function getOpColor(opNome: string, allOps: string[], status?: string) {
   const idx = allOps.indexOf(opNome);
-  return OP_COLORS[idx >= 0 ? idx % OP_COLORS.length : 0];
+  const palette = status === 'Finalizada' ? OP_COLORS_FINISHED : OP_COLORS;
+  return palette[idx >= 0 ? idx % palette.length : 0];
 }
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -32,7 +43,7 @@ export default function CalendarioPage() {
       const { data } = await supabase
         .from('turmas')
         .select('*, operacoes(nome)')
-        .eq('status', 'Em Andamento');
+        .in('status', ['Em Andamento', 'Finalizada']);
       if (data) setTurmas(data);
       setLoading(false);
     }
@@ -105,7 +116,7 @@ export default function CalendarioPage() {
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
             <div>
               <h1 className="text-lg font-bold text-gray-900">Cronograma de Treinamentos</h1>
-              <p className="text-xs text-gray-400 mt-0.5">Turmas em andamento</p>
+              <p className="text-xs text-gray-400 mt-0.5">Turmas em andamento e finalizadas</p>
             </div>
             <div className="flex items-center gap-1 bg-gray-100 rounded-xl px-1 py-1">
               <button
@@ -205,7 +216,7 @@ export default function CalendarioPage() {
                     <div className="space-y-0.5">
                       {turmasDia.slice(0, MAX_VISIBLE).map(t => {
                         const opNome = t.operacoes?.nome || 'Sem Operação';
-                        const c = getOpColor(opNome, allOps);
+                        const c = getOpColor(opNome, allOps, t.status);
                         return (
                           <div
                             key={t.numero_turma}
@@ -274,7 +285,7 @@ export default function CalendarioPage() {
                     </svg>
                   </div>
                   <p className="text-sm font-medium text-gray-500">Sem treinamentos</p>
-                  <p className="text-xs text-gray-400 mt-1">Nenhuma turma ativa nesta data.</p>
+                  <p className="text-xs text-gray-400 mt-1">Nenhuma turma nesta data.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -287,7 +298,7 @@ export default function CalendarioPage() {
 
                   {selectedTurmas.map(t => {
                     const opNome = t.operacoes?.nome || 'Sem Operação';
-                    const c = getOpColor(opNome, allOps);
+                    const c = getOpColor(opNome, allOps, t.status);
 
                     // Lê o campo único "horario" do Supabase
                     const horario = formatHorario(t.horario);
@@ -319,6 +330,17 @@ export default function CalendarioPage() {
                         {/* Detalhes do card */}
                         <div className="px-3 py-2.5 bg-white space-y-2">
 
+                          {/* Status */}
+                          <div className="flex items-start gap-2">
+                            <svg className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            <div>
+                              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Status</p>
+                              <p className="text-xs font-semibold text-gray-800">{t.status || 'Em Andamento'}</p>
+                            </div>
+                          </div>
+
                           {/* Operação */}
                           <div className="flex items-start gap-2">
                             <svg className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -341,7 +363,7 @@ export default function CalendarioPage() {
                             </div>
                           </div>
 
-                          {/* Horário — sempre exibido, mostra "Não informado" se vazio */}
+                          {/* Horário */}
                           <div className="flex items-start gap-2">
                             <svg className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
