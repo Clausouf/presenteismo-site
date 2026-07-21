@@ -135,9 +135,9 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
 
   useEffect(() => {
     async function carregarSalas() {
-      const { data } = await supabase.from('turmas').select('sala');
+      const { data } = await supabase.from('salas').select('nome');
       if (data) {
-        const unicas = Array.from(new Set(data.map(t => t.sala).filter(Boolean))) as string[];
+        const unicas = Array.from(new Set(data.map(s => s.nome).filter(Boolean))) as string[];
         setSalasDisponiveis(unicas);
       }
     }
