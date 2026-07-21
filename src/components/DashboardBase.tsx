@@ -714,18 +714,28 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
                     dataKey="dias"
                     nameKey="name"
                     cx="50%"
-                    cy="50%"
-                    innerRadius={50}
-                    outerRadius={80}
+                    cy="45%"
+                    innerRadius={40}
+                    outerRadius={65}
                     paddingAngle={2}
-                    label={({ name, percent }: any) => `${name} (${(percent * 100).toFixed(0)}%)`}
-                    labelLine={false}
                   >
                     {data.salaStats.map((_, index) => (
                       <Cell key={`cell-${index}`} fill={SALA_COLORS[index % SALA_COLORS.length]} />
                     ))}
                   </Pie>
                   <Tooltip content={<CustomPieTooltip />} />
+                  <Legend 
+                    verticalAlign="bottom" 
+                    align="center"
+                    iconSize={10}
+                    wrapperStyle={{ fontSize: '11px', paddingTop: '4px' }}
+                    formatter={(value, entry: any) => {
+                      const { payload } = entry;
+                      const total = data.salaStats.reduce((acc: number, curr: any) => acc + curr.dias, 0);
+                      const percent = total > 0 ? ((payload.dias / total) * 100).toFixed(0) : 0;
+                      return <span className="text-gray-700 font-medium">{value} ({percent}%)</span>;
+                    }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             </div>
