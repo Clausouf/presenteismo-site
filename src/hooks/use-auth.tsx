@@ -5,32 +5,62 @@ import { supabase } from '@/lib/supabase';
 import { User } from '@supabase/supabase-js';
 import { useRouter, usePathname } from 'next/navigation';
 
+// Tipo estendido com o perfil real do Supabase
+export type AppUser = User & {
+  perfil?: string | null;
+  nome?: string | null;
+};
+
 const AuthContext = createContext<{
-  user: User | null;
+  user: AppUser | null;
   loading: boolean;
   logout: () => Promise<void>;
 }>({ user: null, loading: true, logout: async () => {} });
 
+// Busca o role na tabela profile
+async function fetchPerfil(userId: string): Promise<{ role: string | null; nome: string | null }> {
+  const { data, error } = await supabase
+    .from('profile')
+    .select('role, nome')
+    .eq('id', userId)
+    .single();
+
+  if (error || !data) return { role: null, nome: null };
+  return { role: data.role ?? null, nome: data.nome ?? null };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
 
+  async function hydrateUser(baseUser: User | null) {
+    if (!baseUser) {
+      setUser(null);
+      setLoading(false);
+      return;
+    }
+
+    const { role, nome } = await fetchPerfil(baseUser.id);
+    setUser({ ...baseUser, perfil: role, nome });
+    setLoading(false);
+  }
+
   useEffect(() => {
     // Checa sessão atual
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
+      hydrateUser(session?.user ?? null);
     });
 
     // Escuta mudanças de estado (Login / Logout)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-      
-      if (!session && pathname !== '/login') {
-        router.push('/login');
+      if (!session) {
+        setUser(null);
+        setLoading(false);
+        if (pathname !== '/login') router.push('/login');
+      } else {
+        hydrateUser(session.user);
       }
     });
 
