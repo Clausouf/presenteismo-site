@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import Image from 'next/image';
 
 const PERFIL_LABEL: Record<string, string> = {
   gerente:      'Gerente',
@@ -21,26 +22,17 @@ function perfilLabel(role?: string | null): string {
   return PERFIL_LABEL[role.toLowerCase()] ?? role;
 }
 
+// ── LOGO COM IMAGEM DA PASTA PUBLIC ────────────────────────────────────────
 function LogoIcon({ size = 36 }: { size?: number }) {
   return (
-    <svg
+    <Image
+      src="/logo.png"
+      alt="Presenteismo Logo"
       width={size}
       height={size}
-      viewBox="0 0 48 48"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      style={{ flexShrink: 0 }}
-    >
-      <circle cx="24" cy="24" r="24" fill="#052e16" />
-      <circle cx="24" cy="24" r="18" fill="#14532d" stroke="#166534" strokeWidth="1.5" />
-      <path
-        d="M14 24.5L20.5 31L34 17"
-        stroke="#4ade80"
-        strokeWidth="3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+      style={{ width: size, height: size, objectFit: 'contain', flexShrink: 0 }}
+      priority
+    />
   );
 }
 
@@ -69,7 +61,7 @@ function AppSidebar() {
   const [isOpen, setIsOpen] = useState(false);
 
   const baseMenuItems = [
-    { name: 'Dashboard',          href: '/dashboard/treinamento', icon: LayoutDashboard, matchPrefix: '/dashboard'  },
+    { name: 'Dashboard',         href: '/dashboard/treinamento', icon: LayoutDashboard, matchPrefix: '/dashboard'  },
     { name: 'Criar Turmas',       href: '/cadastro',              icon: PlusCircle,      matchPrefix: '/cadastro'   },
     { name: 'Diário de Presença', href: '/turmas',                icon: BookOpen,        matchPrefix: '/turmas'     },
     { name: 'Calendário',         href: '/calendario',            icon: CalendarDays,    matchPrefix: '/calendario' },
