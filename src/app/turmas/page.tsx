@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import {
   Trash2, ChevronDown, BookOpen, Clock, MapPin, User,
   AlertCircle, TrendingDown, MessageSquare, Plus, Calendar, X,
-  CreditCard, Briefcase, Timer,
+  CreditCard, Briefcase, Timer, Pencil,
 } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
@@ -33,7 +33,6 @@ const REGISTRO_COLORS: Record<string, string> = {
 
 // ── MODAL DE DADOS DO OPERADOR ───────────────────────────────────────────────
 function OperadorModal({ colab, onClose }: { colab: any; onClose: () => void }) {
-  // Fecha ao pressionar Esc
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', handler);
@@ -41,18 +40,15 @@ function OperadorModal({ colab, onClose }: { colab: any; onClose: () => void }) 
   }, [onClose]);
 
   return (
-    // Overlay
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
       onClick={onClose}
     >
-      {/* Card do modal — clique interno não fecha */}
       <div
         className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="bg-gradient-to-r from-slate-800 to-slate-700 px-5 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center">
@@ -71,9 +67,7 @@ function OperadorModal({ colab, onClose }: { colab: any; onClose: () => void }) 
           </button>
         </div>
 
-        {/* Corpo */}
         <div className="px-5 py-4 space-y-3">
-          {/* Matrícula */}
           <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
             <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
               <CreditCard className="w-4 h-4 text-blue-600" />
@@ -84,7 +78,6 @@ function OperadorModal({ colab, onClose }: { colab: any; onClose: () => void }) 
             </div>
           </div>
 
-          {/* Jornada */}
           <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
             <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center flex-shrink-0">
               <Briefcase className="w-4 h-4 text-emerald-600" />
@@ -95,7 +88,6 @@ function OperadorModal({ colab, onClose }: { colab: any; onClose: () => void }) 
             </div>
           </div>
 
-          {/* Grupo 30h */}
           <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
             <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
               <Timer className="w-4 h-4 text-amber-600" />
@@ -111,13 +103,263 @@ function OperadorModal({ colab, onClose }: { colab: any; onClose: () => void }) 
           </div>
         </div>
 
-        {/* Footer */}
         <div className="px-5 pb-4">
           <button
             onClick={onClose}
             className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-white text-sm font-semibold rounded-xl transition-colors"
           >
             Fechar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── MODAL DE EDIÇÃO DA TURMA ─────────────────────────────────────────────────
+function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { turma: any; colaboradoresAtuais: any[]; onClose: () => void; onSave: () => void }) {
+  const [sala, setSala] = useState(turma.sala || '');
+  const [dataInicio, setDataInicio] = useState(turma.data_inicio || '');
+  const [dataFim, setDataFim] = useState(turma.data_fim || '');
+  
+  const [novosOperadores, setNovosOperadores] = useState<any[]>([]);
+  const [nomeOp, setNomeOp] = useState('');
+  const [matriculaOp, setMatriculaOp] = useState('');
+  const [jornadaOp, setJornadaOp] = useState('');
+  const [grupo30Op, setGrupo30Op] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const handleAddLocalOperador = () => {
+    if (!nomeOp.trim() || !matriculaOp.trim()) {
+      alert('Preencha pelo menos o Nome e a Matrícula do operador.');
+      return;
+    }
+    const existeAtual = colaboradoresAtuais.some(c => c.matricula === matriculaOp);
+    const existeNovo = novosOperadores.some(o => o.matricula === matriculaOp);
+    if (existeAtual || existeNovo) {
+      alert('Já existe um operador com esta matrícula nesta turma ou na lista de novos.');
+      return;
+    }
+
+    setNovosOperadores([
+      ...novosOperadores,
+      { nome: nomeOp, matricula: matriculaOp, jornada: jornadaOp, grupo_30_horas: grupo30Op }
+    ]);
+    setNomeOp('');
+    setMatriculaOp('');
+    setJornadaOp('');
+    setGrupo30Op(false);
+  };
+
+  const handleRemoveLocalOperador = (matricula: string) => {
+    setNovosOperadores(novosOperadores.filter(o => o.matricula !== matricula));
+  };
+
+  const handleSalvarEdicao = async () => {
+    setLoading(true);
+    try {
+      const { error: errTurma } = await supabase
+        .from('turmas')
+        .update({
+          sala: sala,
+          data_inicio: dataInicio,
+          data_fim: dataFim,
+        })
+        .eq('numero_turma', turma.numero_turma);
+
+      if (errTurma) throw new Error('Erro ao atualizar turma: ' + errTurma.message);
+
+      if (novosOperadores.length > 0) {
+        const payloadColabs = novosOperadores.map(op => ({
+          numero_turma: turma.numero_turma,
+          matricula: op.matricula,
+          nome: op.nome,
+          jornada: op.jornada,
+          grupo_30_horas: op.grupo_30_horas,
+        }));
+
+        const { error: errColab } = await supabase
+          .from('colaboradores')
+          .insert(payloadColabs);
+
+        if (errColab) throw new Error('Erro ao adicionar novos operadores: ' + errColab.message);
+      }
+
+      alert('Turma atualizada com sucesso!');
+      onSave();
+      onClose();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/45"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[90vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="bg-gradient-to-r from-slate-800 to-slate-700 px-5 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center">
+              <Pencil className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <p className="text-white font-bold text-sm leading-tight">Editar Turma {turma.numero_turma}</p>
+              <p className="text-slate-400 text-xs mt-0.5">Altere sala, datas e adicione operadores</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-all"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4 overflow-y-auto flex-1">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1">Sala</label>
+              <input
+                type="text"
+                value={sala}
+                onChange={(e) => setSala(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs text-gray-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-300"
+                placeholder="Ex: Sala 01"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1">Início do Treinamento</label>
+              <input
+                type="date"
+                value={dataInicio}
+                onChange={(e) => setDataInicio(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs text-gray-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-300"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1">Fim do Treinamento</label>
+              <input
+                type="date"
+                value={dataFim}
+                onChange={(e) => setDataFim(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs text-gray-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-300"
+              />
+            </div>
+          </div>
+
+          <hr className="border-gray-100 my-2" />
+
+          <div>
+            <h3 className="text-xs font-bold text-gray-800 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+              <User className="w-3.5 h-3.5 text-blue-600" /> Adicionar Operadores na Turma
+            </h3>
+            
+            <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Nome do Operador</label>
+                  <input
+                    type="text"
+                    value={nomeOp}
+                    onChange={(e) => setNomeOp(e.target.value)}
+                    placeholder="Nome completo"
+                    className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Matrícula</label>
+                  <input
+                    type="text"
+                    value={matriculaOp}
+                    onChange={(e) => setMatriculaOp(e.target.value)}
+                    placeholder="Ex: 12345"
+                    className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 items-end">
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Jornada</label>
+                  <input
+                    type="text"
+                    value={jornadaOp}
+                    onChange={(e) => setJornadaOp(e.target.value)}
+                    placeholder="Ex: 08:00 - 17:18"
+                    className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-700 font-medium">
+                    <input
+                      type="checkbox"
+                      checked={grupo30Op}
+                      onChange={(e) => setGrupo30Op(e.target.checked)}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-300 w-4 h-4"
+                    />
+                    Grupo 30h
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleAddLocalOperador}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1 shadow-sm"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Adicionar à Lista
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {novosOperadores.length > 0 && (
+              <div className="mt-3 space-y-1.5">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Novos operadores prontos para salvar ({novosOperadores.length}):</p>
+                <div className="max-h-32 overflow-y-auto space-y-1 pr-1">
+                  {novosOperadores.map((op) => (
+                    <div key={op.matricula} className="flex items-center justify-between bg-blue-50/50 border border-blue-100 px-3 py-1.5 rounded-lg text-xs">
+                      <div>
+                        <span className="font-bold text-gray-800">{op.nome}</span>
+                        <span className="text-gray-500 ml-2">({op.matricula})</span>
+                        {op.jornada && <span className="text-gray-400 ml-2">— {op.jornada}</span>}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveLocalOperador(op.matricula)}
+                        className="text-rose-500 hover:text-rose-700 p-1 rounded transition-colors"
+                        title="Remover da lista"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-semibold rounded-xl transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={handleSalvarEdicao}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            {loading ? 'Salvando...' : 'Salvar Alterações'}
           </button>
         </div>
       </div>
@@ -132,11 +374,12 @@ function FormattedDate({ dateString }: { dateString: string }) {
 }
 
 // ── COMPONENTE DA TURMA ──────────────────────────────────────────────────────
-function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInicial, onUpdate, onStatusChange, onDeleteTurma }: any) {
+function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInicial, onUpdate, onStatusChange, onDeleteTurma, onRefresh }: any) {
   const [observacoes, setObservacoes] = useState(obsInicial || []);
   const [novaObs, setNovaObs] = useState('');
   const [obsOpen, setObsOpen] = useState(false);
   const [operadorSelecionado, setOperadorSelecionado] = useState<any | null>(null);
+  const [editModalOpen, setEditModalOpen] = useState(false);
 
   const datas = gerarArrayDatas(turma.data_inicio, turma.data_fim);
   const statusColor = STATUS_COLORS[turma.status] || STATUS_COLORS['Em Andamento'];
@@ -173,11 +416,19 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
 
   return (
     <>
-      {/* Modal do operador — renderizado fora do card para evitar overflow:hidden */}
       {operadorSelecionado && (
         <OperadorModal
           colab={operadorSelecionado}
           onClose={() => setOperadorSelecionado(null)}
+        />
+      )}
+
+      {editModalOpen && (
+        <EditarTurmaModal
+          turma={turma}
+          colaboradoresAtuais={colaboradores}
+          onClose={() => setEditModalOpen(false)}
+          onSave={onRefresh}
         />
       )}
 
@@ -227,6 +478,14 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
             </div>
 
             <button
+              onClick={() => setEditModalOpen(true)}
+              className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-all"
+              title="Editar Turma"
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+
+            <button
               onClick={() => onDeleteTurma(turma.numero_turma)}
               className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-rose-500/80 text-white/70 hover:text-white transition-all"
               title="Excluir Turma"
@@ -263,7 +522,6 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
               {colaboradores.map((c: any) => (
                 <tr key={c.matricula} className="hover:bg-blue-50/30 transition-colors">
                   <td className="px-4 py-2.5 sticky left-0 bg-white hover:bg-blue-50/30 z-10">
-                    {/* Botão de clique para abrir modal */}
                     <button
                       onClick={() => setOperadorSelecionado(c)}
                       className="flex items-center gap-1.5 group/btn text-left"
@@ -612,6 +870,11 @@ export default function DiarioPresencaPage() {
               onUpdate={handleUpdatePresence}
               onStatusChange={handleStatusChange}
               onDeleteTurma={handleDeleteTurma}
+              onRefresh={async () => {
+                const { data: t } = await supabase.from('turmas').select('*');
+                if (t) setTurmas(t);
+                carregarDados();
+              }}
             />
           );
         })}
