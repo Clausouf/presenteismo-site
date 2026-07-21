@@ -31,19 +31,20 @@ const REGISTRO_COLORS: Record<string, string> = {
   '':                      'bg-white text-slate-400 border-slate-200',
 };
 
-function gerarArrayDatas(dataInicio: string, dataFim: string) {
-  if (!dataInicio || !dataFim) return [];
-  const datas = [];
-  let atual = new Date(dataInicio + 'T00:00:00');
-  const fim = new Date(dataFim + 'T00:00:00');
-  while (atual <= fim) {
-    const ano = atual.getFullYear();
-    const mes = String(atual.getMonth() + 1).padStart(2, '0');
-    const dia = String(atual.getDate()).padStart(2, '0');
-    datas.push(`${ano}-${mes}-${dia}`);
-    atual.setDate(atual.getDate() + 1);
+// ── FUNÇÃO AUXILIAR PARA GERAR DATAS ────────────────────────────────────────
+function gerarArrayDatas(inicio: string, fim: string): string[] {
+  if (!inicio || !fim) return [];
+  const arr: string[] = [];
+  let dt = new Date(inicio + 'T00:00:00');
+  const dtFim = new Date(fim + 'T00:00:00');
+  while (dt <= dtFim) {
+    const ano = dt.getFullYear();
+    const mes = String(dt.getMonth() + 1).padStart(2, '0');
+    const dia = String(dt.getDate()).padStart(2, '0');
+    arr.push(`${ano}-${mes}-${dia}`);
+    dt.setDate(dt.getDate() + 1);
   }
-  return datas;
+  return arr;
 }
 
 // ── MODAL DE DADOS DO OPERADOR ───────────────────────────────────────────────
@@ -137,33 +138,19 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
   const [dataInicio, setDataInicio] = useState(turma.data_inicio || '');
   const [dataFim, setDataFim] = useState(turma.data_fim || '');
   
-  const [salasDisponiveis, setSalasDisponiveis] = useState<string[]>([]);
-  const [colabsAtuais, setColabsAtuais] = useState<any[]>(colaboradoresAtuais);
   const [novosOperadores, setNovosOperadores] = useState<any[]>([]);
-  
   const [nomeOp, setNomeOp] = useState('');
   const [matriculaOp, setMatriculaOp] = useState('');
   const [jornadaOp, setJornadaOp] = useState('');
   const [grupo30Op, setGrupo30Op] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    async function carregarSalas() {
-      const { data, error } = await supabase.from('salas').select('*');
-      if (!error && data) {
-        const lista = data.map((s: any) => s.nome || s.sala || s.id).filter(Boolean);
-        setSalasDisponiveis(lista);
-      }
-    }
-    carregarSalas();
-  }, []);
-
   const handleAddLocalOperador = () => {
     if (!nomeOp.trim() || !matriculaOp.trim()) {
       alert('Preencha pelo menos o Nome e a Matrícula do operador.');
       return;
     }
-    const existeAtual = colabsAtuais.some(c => c.matricula === matriculaOp);
+    const existeAtual = colaboradoresAtuais.some(c => c.matricula === matriculaOp);
     const existeNovo = novosOperadores.some(o => o.matricula === matriculaOp);
     if (existeAtual || existeNovo) {
       alert('Já existe um operador com esta matrícula nesta turma ou na lista de novos.');
@@ -182,22 +169,6 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
 
   const handleRemoveLocalOperador = (matricula: string) => {
     setNovosOperadores(novosOperadores.filter(o => o.matricula !== matricula));
-  };
-
-  const handleExcluirOperadorExistente = async (matricula: string, nome: string) => {
-    if (!confirm(`Deseja realmente remover o operador ${nome} (${matricula}) desta turma?`)) return;
-    try {
-      const { error } = await supabase
-        .from('colaboradores')
-        .delete()
-        .eq('matricula', matricula)
-        .eq('numero_turma', turma.numero_turma);
-
-      if (error) throw error;
-      setColabsAtuais(colabsAtuais.filter(c => c.matricula !== matricula));
-    } catch (err: any) {
-      alert('Erro ao excluir operador: ' + err.message);
-    }
   };
 
   const handleSalvarEdicao = async () => {
@@ -257,7 +228,7 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
             </div>
             <div>
               <p className="text-white font-bold text-sm leading-tight">Editar Turma {turma.numero_turma}</p>
-              <p className="text-slate-400 text-xs mt-0.5">Altere sala, datas, gerencie operadores</p>
+              <p className="text-slate-400 text-xs mt-0.5">Altere sala, datas e adicione operadores</p>
             </div>
           </div>
           <button
@@ -272,16 +243,13 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
               <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1">Sala</label>
-              <select
+              <input
+                type="text"
                 value={sala}
                 onChange={(e) => setSala(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs text-gray-800 font-medium bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
-              >
-                <option value="">Selecione a sala</option>
-                {salasDisponiveis.map((s, idx) => (
-                  <option key={idx} value={s}>{s}</option>
-                ))}
-              </select>
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs text-gray-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-300"
+                placeholder="Ex: Sala 01"
+              />
             </div>
             <div>
               <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1">Início do Treinamento</label>
@@ -305,42 +273,9 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
 
           <hr className="border-gray-100 my-2" />
 
-          {/* LISTA DE OPERADORES ATUAIS COM OPÇÃO DE EXCLUSÃO */}
           <div>
             <h3 className="text-xs font-bold text-gray-800 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-              <User className="w-3.5 h-3.5 text-blue-600" /> Operadores na Turma ({colabsAtuais.length})
-            </h3>
-            {colabsAtuais.length > 0 ? (
-              <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
-                {colabsAtuais.map((c) => (
-                  <div key={c.matricula} className="flex items-center justify-between bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-lg text-xs">
-                    <div>
-                      <span className="font-bold text-gray-800">{c.nome}</span>
-                      <span className="text-gray-500 ml-2">({c.matricula})</span>
-                      {c.jornada && <span className="text-gray-400 ml-2">— {c.jornada}</span>}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleExcluirOperadorExistente(c.matricula, c.nome)}
-                      className="text-rose-500 hover:text-rose-700 p-1 rounded transition-colors hover:bg-rose-50"
-                      title="Excluir operador da turma"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-gray-400 italic">Nenhum operador cadastrado nesta turma.</p>
-            )}
-          </div>
-
-          <hr className="border-gray-100 my-2" />
-
-          {/* ADICIONAR NOVOS OPERADORES */}
-          <div>
-            <h3 className="text-xs font-bold text-gray-800 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-              <Plus className="w-3.5 h-3.5 text-blue-600" /> Adicionar Novos Operadores
+              <User className="w-3.5 h-3.5 text-blue-600" /> Adicionar Operadores na Turma
             </h3>
             
             <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 space-y-3">
@@ -402,7 +337,7 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
             {novosOperadores.length > 0 && (
               <div className="mt-3 space-y-1.5">
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Novos operadores prontos para salvar ({novosOperadores.length}):</p>
-                <div className="max-h-28 overflow-y-auto space-y-1 pr-1">
+                <div className="max-h-32 overflow-y-auto space-y-1 pr-1">
                   {novosOperadores.map((op) => (
                     <div key={op.matricula} className="flex items-center justify-between bg-blue-50/50 border border-blue-100 px-3 py-1.5 rounded-lg text-xs">
                       <div>
@@ -514,6 +449,8 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
       )}
 
       <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden mb-6">
+
+        {/* ── HEADER DA TURMA ── */}
         <div className="px-5 py-4 bg-gradient-to-r from-slate-800 to-slate-700 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0">
@@ -574,6 +511,7 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
           </div>
         </div>
 
+        {/* ── TABELA DE PRESENÇA ── */}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
@@ -639,6 +577,7 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
               ))}
             </tbody>
 
+            {/* ── RODAPÉ DE INDICADORES ── */}
             <tfoot>
               <tr className="bg-rose-50/60 border-t-2 border-rose-100">
                 <td className="px-4 py-2.5 sticky left-0 bg-rose-50/60 z-10">
@@ -680,6 +619,7 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
           </table>
         </div>
 
+        {/* ── SEÇÃO DE OBSERVAÇÕES ── */}
         <div className="border-t border-gray-100">
           <button
             onClick={() => setObsOpen(!obsOpen)}
@@ -746,5 +686,242 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
         </div>
       </div>
     </>
+  );
+}
+
+// ── PÁGINA PRINCIPAL ─────────────────────────────────────────────────────────
+export default function DiarioPresencaPage() {
+  const [equipe, setEquipe] = useState<any[]>([]);
+  const [operacoes, setOperacoes] = useState<any[]>([]);
+  const [turmas, setTurmas] = useState<any[]>([]);
+  const [selectedOperacaoId, setSelectedOperacaoId] = useState<string>('todos');
+  const [selectedTurmaNum, setSelectedTurmaNum] = useState<string>('');
+  const [dadosDasTurmas, setDadosDasTurmas] = useState<Record<string, any>>({});
+  const [loadingDados, setLoadingDados] = useState(false);
+
+  useEffect(() => {
+    async function fetchInitialData() {
+      try {
+        const [resOp, resTurmas, resEquipe] = await Promise.all([
+          supabase.from('operacoes').select('*'),
+          supabase.from('turmas').select('*'),
+          supabase.from('equipe').select('*'),
+        ]);
+        if (resOp.data) setOperacoes(resOp.data);
+        if (resTurmas.data) setTurmas(resTurmas.data);
+        if (resEquipe.data) setEquipe(resEquipe.data);
+      } catch (err) {
+        console.error('Erro ao carregar dados iniciais:', err);
+      }
+    }
+    fetchInitialData();
+  }, []);
+
+  async function carregarDados() {
+    if (selectedOperacaoId === 'todos') { setDadosDasTurmas({}); return; }
+    setLoadingDados(true);
+    try {
+      const turmasDaOp = selectedTurmaNum
+        ? turmas.filter(t => t.numero_turma === selectedTurmaNum)
+        : turmas.filter(t => String(t.operacao_id) === String(selectedOperacaoId));
+
+      const novoMap: Record<string, any> = {};
+
+      for (const t of turmasDaOp) {
+        const [colabsRes, presRes, obsRes] = await Promise.all([
+          supabase.from('colaboradores').select('*').eq('numero_turma', t.numero_turma),
+          supabase.from('presencas').select('*').eq('numero_turma', t.numero_turma),
+          supabase.from('turma_observacoes').select('*').eq('numero_turma', t.numero_turma).order('created_at', { ascending: false }),
+        ]);
+
+        const presencasMap: Record<string, any> = {};
+        if (presRes.data) {
+          presRes.data.forEach((p: any) => {
+            presencasMap[`${p.matricula}_${p.data}`] = p;
+          });
+        }
+
+        const resp = equipe.find(e => e.id === t.responsavel_id);
+
+        novoMap[t.numero_turma] = {
+          turma: t,
+          responsavelNome: resp ? resp.nome : '',
+          colaboradores: colabsRes.data || [],
+          presencas: presencasMap,
+          observacoes: obsRes.data || [],
+        };
+      }
+
+      setDadosDasTurmas(novoMap);
+    } catch (err) {
+      console.error('Erro ao carregar dados das turmas:', err);
+    } finally {
+      setLoadingDados(false);
+    }
+  }
+
+  useEffect(() => {
+    carregarDados();
+  }, [selectedOperacaoId, selectedTurmaNum, turmas]);
+
+  const handleStatusChange = async (numeroTurma: string, novoStatus: string) => {
+    const { error } = await supabase
+      .from('turmas')
+      .update({ status: novoStatus })
+      .eq('numero_turma', numeroTurma);
+
+    if (error) {
+      alert('Erro ao atualizar status: ' + error.message);
+      return;
+    }
+
+    setTurmas(turmas.map(t => t.numero_turma === numeroTurma ? { ...t, status: novoStatus } : t));
+  };
+
+  const handleDeleteTurma = async (numeroTurma: string) => {
+    if (!confirm(`Tem certeza que deseja excluir a turma ${numeroTurma}?`)) return;
+    const { error } = await supabase.from('turmas').delete().eq('numero_turma', numeroTurma);
+    if (error) {
+      alert('Erro ao excluir turma: ' + error.message);
+      return;
+    }
+    setTurmas(turmas.filter(t => t.numero_turma !== numeroTurma));
+  };
+
+  const handleUpdatePresenca = async (numeroTurma: string, matricula: string, nome: string, data: string, tipoRegistro: string) => {
+    try {
+      const { error } = await supabase
+        .from('presencas')
+        .upsert({
+          numero_turma: numeroTurma,
+          matricula: matricula,
+          nome: nome,
+          data: data,
+          tipo_registro: tipoRegistro,
+        }, { onConflict: 'numero_turma,matricula,data' });
+
+      if (error) throw error;
+
+      setDadosDasTurmas((prev: any) => {
+        const atual = prev[numeroTurma];
+        if (!atual) return prev;
+        return {
+          ...prev,
+          [numeroTurma]: {
+            ...atual,
+            presencas: {
+              ...atual.presencas,
+              [`${matricula}_${data}`]: { tipo_registro: tipoRegistro }
+            }
+          }
+        };
+      });
+    } catch (err: any) {
+      console.error(err);
+      alert('Erro ao salvar presença: ' + err.message);
+    }
+  };
+
+  const turmasFiltradas = selectedOperacaoId === 'todos'
+    ? []
+    : selectedTurmaNum
+    ? turmas.filter(t => t.numero_turma === selectedTurmaNum)
+    : turmas.filter(t => String(t.operacao_id) === String(selectedOperacaoId));
+
+  return (
+    <div className="min-h-screen bg-gray-50/50 p-6">
+      <div className="max-w-7xl mx-auto space-y-6">
+        
+        {/* Cabeçalho da Página */}
+        <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-bold text-gray-800 tracking-tight">Diário de Presença</h1>
+            <p className="text-xs text-gray-500 mt-0.5">Acompanhamento diário de turmas, frequências e indicadores</p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div>
+              <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Operação</label>
+              <select
+                value={selectedOperacaoId}
+                onChange={(e) => {
+                  setSelectedOperacaoId(e.target.value);
+                  setSelectedTurmaNum('');
+                }}
+                className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-blue-300"
+              >
+                <option value="todos">Selecione uma operação...</option>
+                {operacoes.map(op => (
+                  <option key={op.id} value={op.id}>{op.nome}</option>
+                ))}
+              </select>
+            </div>
+
+            {selectedOperacaoId !== 'todos' && (
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Turma</label>
+                <select
+                  value={selectedTurmaNum}
+                  onChange={(e) => setSelectedTurmaNum(e.target.value)}
+                  className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-blue-300"
+                >
+                  <option value="">Todas as turmas</option>
+                  {turmas
+                    .filter(t => String(t.operacao_id) === String(selectedOperacaoId))
+                    .map(t => (
+                      <option key={t.numero_turma} value={t.numero_turma}>Turma {t.numero_turma}</option>
+                    ))}
+                </select>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Conteúdo Principal */}
+        {selectedOperacaoId === 'todos' ? (
+          <div className="bg-white rounded-2xl p-12 border border-gray-200 shadow-sm text-center space-y-3">
+            <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto">
+              <BookOpen className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-gray-800">Nenhuma operação selecionada</h3>
+            <p className="text-xs text-gray-500 max-w-sm mx-auto">
+              Selecione uma operação acima para visualizar as turmas e o diário de presença correspondente.
+            </p>
+          </div>
+        ) : loadingDados ? (
+          <div className="bg-white rounded-2xl p-12 border border-gray-200 shadow-sm text-center space-y-3">
+            <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+            <p className="text-xs font-semibold text-gray-500">Carregando turmas e dados...</p>
+          </div>
+        ) : turmasFiltradas.length === 0 ? (
+          <div className="bg-white rounded-2xl p-12 border border-gray-200 shadow-sm text-center space-y-3">
+            <h3 className="text-base font-bold text-gray-800">Nenhuma turma encontrada</h3>
+            <p className="text-xs text-gray-500">Não há turmas cadastradas para os filtros selecionados.</p>
+          </div>
+        ) : (
+          <div>
+            {turmasFiltradas.map(turma => {
+              const dados = dadosDasTurmas[turma.numero_turma];
+              if (!dados) return null;
+              return (
+                <TabelaTurma
+                  key={turma.numero_turma}
+                  turma={turma}
+                  responsavelNome={dados.responsavelNome}
+                  colaboradores={dados.colaboradores}
+                  presencas={dados.presencas}
+                  obsInicial={dados.observacoes}
+                  onUpdate={handleUpdatePresenca}
+                  onStatusChange={handleStatusChange}
+                  onDeleteTurma={handleDeleteTurma}
+                  onRefresh={carregarDados}
+                />
+              );
+            })}
+          </div>
+        )}
+
+      </div>
+    </div>
   );
 }
