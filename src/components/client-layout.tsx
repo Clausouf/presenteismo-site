@@ -9,7 +9,18 @@ import {
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-// ── ÍCONE SVG DA LOGO ────────────────────────────────────────────────────────
+const PERFIL_LABEL: Record<string, string> = {
+  gerente:      'Gerente',
+  analista:     'Analista',
+  instrutor:    'Instrutor',
+  recrutamento: 'Recrutamento',
+};
+
+function perfilLabel(role?: string | null): string {
+  if (!role) return 'Usuário';
+  return PERFIL_LABEL[role.toLowerCase()] ?? role;
+}
+
 function LogoIcon({ size = 36 }: { size?: number }) {
   return (
     <svg
@@ -33,7 +44,6 @@ function LogoIcon({ size = 36 }: { size?: number }) {
   );
 }
 
-// ── BLOCO DE LOGO ────────────────────────────────────────────────────────────
 function LogoBlock() {
   return (
     <div className="flex items-center gap-3">
@@ -53,18 +63,16 @@ function LogoBlock() {
   );
 }
 
-// ── SIDEBAR ──────────────────────────────────────────────────────────────────
 function AppSidebar() {
   const pathname = usePathname();
   const { logout, user, loading } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
 
-  // Dashboard é item único — ativo quando estiver em qualquer sub-rota /dashboard/*
   const baseMenuItems = [
-    { name: 'Dashboard',          href: '/dashboard/treinamento', icon: LayoutDashboard, matchPrefix: '/dashboard' },
-    { name: 'Criar Turmas',       href: '/cadastro',               icon: PlusCircle,      matchPrefix: '/cadastro'  },
-    { name: 'Diário de Presença', href: '/turmas',                 icon: BookOpen,        matchPrefix: '/turmas'    },
-    { name: 'Calendário',         href: '/calendario',             icon: CalendarDays,    matchPrefix: '/calendario'},
+    { name: 'Dashboard',          href: '/dashboard/treinamento', icon: LayoutDashboard, matchPrefix: '/dashboard'  },
+    { name: 'Criar Turmas',       href: '/cadastro',              icon: PlusCircle,      matchPrefix: '/cadastro'   },
+    { name: 'Diário de Presença', href: '/turmas',                icon: BookOpen,        matchPrefix: '/turmas'     },
+    { name: 'Calendário',         href: '/calendario',            icon: CalendarDays,    matchPrefix: '/calendario' },
   ];
 
   const isGerente = !loading && user?.perfil?.toLowerCase() === 'gerente';
@@ -72,14 +80,14 @@ function AppSidebar() {
     ? [...baseMenuItems, { name: 'Novo Administrador', href: '/criar-adm', icon: UserPlus, matchPrefix: '/criar-adm' }]
     : baseMenuItems;
 
-  const sidebarBg   = 'linear-gradient(180deg, #031a0e 0%, #052e16 50%, #031a0e 100%)';
-  const borderColor = 'rgba(255,255,255,0.06)';
-  const activeGreen = 'linear-gradient(135deg, #166534 0%, #14532d 100%)';
+  const sidebarBg    = 'linear-gradient(180deg, #031a0e 0%, #052e16 50%, #031a0e 100%)';
+  const borderColor  = 'rgba(255,255,255,0.06)';
+  const activeGreen  = 'linear-gradient(135deg, #166534 0%, #14532d 100%)';
   const activeShadow = '0 4px 16px rgba(20,83,45,0.5)';
 
   return (
     <>
-      {/* ── TOPBAR MOBILE ── */}
+      {/* TOPBAR MOBILE */}
       <div
         className="flex items-center justify-between px-4 py-3 md:hidden fixed top-0 left-0 right-0 z-50 shadow-lg"
         style={{ background: '#031a0e' }}
@@ -96,7 +104,7 @@ function AppSidebar() {
         </button>
       </div>
 
-      {/* ── OVERLAY MOBILE ── */}
+      {/* OVERLAY MOBILE */}
       {isOpen && (
         <div
           className="fixed inset-0 z-30 md:hidden"
@@ -105,7 +113,7 @@ function AppSidebar() {
         />
       )}
 
-      {/* ── SIDEBAR ── */}
+      {/* SIDEBAR */}
       <aside
         className={`
           fixed top-0 bottom-0 left-0 z-40 w-64 flex flex-col
@@ -156,7 +164,7 @@ function AppSidebar() {
                 className="text-[10px] font-bold tracking-wider uppercase mt-0.5"
                 style={{ color: '#34d399' }}
               >
-                {user.perfil ?? 'Instrutor'}
+                {perfilLabel(user.perfil)}
               </p>
             </div>
           </div>
@@ -178,11 +186,7 @@ function AppSidebar() {
                 className="relative flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200"
                 style={
                   isActive
-                    ? {
-                        background: activeGreen,
-                        color: '#ffffff',
-                        boxShadow: activeShadow,
-                      }
+                    ? { background: activeGreen, color: '#ffffff', boxShadow: activeShadow }
                     : { color: 'rgba(255,255,255,0.48)' }
                 }
                 onMouseEnter={(e) => {
@@ -218,10 +222,7 @@ function AppSidebar() {
         {/* RODAPÉ / LOGOUT */}
         <div
           className="p-3"
-          style={{
-            borderTop: `1px solid ${borderColor}`,
-            background: 'rgba(0,0,0,0.25)',
-          }}
+          style={{ borderTop: `1px solid ${borderColor}`, background: 'rgba(0,0,0,0.25)' }}
         >
           <button
             onClick={() => { logout(); setIsOpen(false); }}
@@ -245,7 +246,6 @@ function AppSidebar() {
   );
 }
 
-// ── CONTEÚDO DO LAYOUT ───────────────────────────────────────────────────────
 function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const pathname = usePathname();
@@ -291,7 +291,6 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
   );
 }
 
-// ── EXPORT DEFAULT ───────────────────────────────────────────────────────────
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthProvider>
