@@ -22,6 +22,7 @@ const SALA_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec
 const PALETTE = {
   treinamento: { primary: '#10b981', light: '#d1fae5', text: '#065f46' },
   recrutamento: { primary: '#8b5cf6', light: '#ede9fe', text: '#4c1d95' },
+  consolidado: { primary: '#3b82f6', light: '#eff6ff', text: '#1e40af' },
 };
 
 // ─── Utilitário de exportação Excel (sem dependência externa) ─────────────────
@@ -174,7 +175,7 @@ const CustomPieTooltip = ({ active, payload }: any) => {
 };
 
 // ─── Componente principal ─────────────────────────────────────────────────────
-export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recrutamento' }) {
+export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recrutamento' | 'consolidado' }) {
   const [loading, setLoading] = useState(true);
   const [raw, setRaw] = useState<{ turmas: any[]; colabs: any[]; diario: any[]; salas: any[] }>({
     turmas: [], colabs: [], diario: [], salas: [],
@@ -265,9 +266,11 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
         };
       });
 
-    // ─── PASSO 2: turmas que têm ao menos 1 pessoa da categoria ──────────────
+    // ─── PASSO 2: turmas que têm ao menos 1 pessoa da categoria (ou todas se consolidado) ──────────────
     const turmasComCategoria = new Set(
-      metricsAll.filter(m => m.category === tipo).map(m => m.turma)
+      tipo === 'consolidado'
+        ? metricsAll.map(m => m.turma)
+        : metricsAll.filter(m => m.category === tipo).map(m => m.turma)
     );
 
     // ─── PASSO 3: ABS/TO por turma ───────────────────────────────────────────────
@@ -276,7 +279,9 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
     const turmasUnicas = [...turmasComCategoria];
     const rankingTurmas = turmasUnicas.map(tNum => {
       const todosDaTurma     = metricsAll.filter(m => m.turma === tNum);
-      const categoriaDaTurma = todosDaTurma.filter(m => m.category === tipo);
+      const categoriaDaTurma = tipo === 'consolidado'
+        ? todosDaTurma
+        : todosDaTurma.filter(m => m.category === tipo);
       // ABS — denominador continua sendo dias
       const totalDiasEsperadosTurma = todosDaTurma.reduce((acc, m) => acc + m.totalDiasEsperados, 0);
       const absCategoria = categoriaDaTurma.reduce((acc, m) => acc + m.countAbs, 0);
@@ -403,7 +408,8 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       { name: 'Ranking por Turma', rows: data.exportSheets.rankingRows },
       { name: 'Diário de Presença', rows: data.exportSheets.diarioRows },
     ]);
-    downloadBlob(blob, `Dashboard_${tipo === 'treinamento' ? 'Treinamento' : 'Recrutamento'}_${selectedMonth}.xlsx`);
+    const nomeTipo = tipo === 'treinamento' ? 'Treinamento' : tipo === 'recrutamento' ? 'Recrutamento' : 'Consolidado';
+    downloadBlob(blob, `Dashboard_${nomeTipo}_${selectedMonth}.xlsx`);
   }
 
   const cor = PALETTE[tipo];
@@ -437,7 +443,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
           <div className="flex rounded-xl overflow-hidden border border-gray-200 bg-gray-100 p-1 gap-1">
             <Link
               href="/dashboard/treinamento"
-              className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
                 tipo === 'treinamento' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -449,7 +455,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
             </Link>
             <Link
               href="/dashboard/recrutamento"
-              className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
                 tipo === 'recrutamento' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -458,6 +464,18 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
                 style={{ backgroundColor: tipo === 'recrutamento' ? PALETTE.recrutamento.primary : '#d1d5db' }}
               />
               Recrutamento
+            </Link>
+            <Link
+              href="/dashboard/consolidado"
+              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                tipo === 'consolidado' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <span
+                className="inline-block w-2 h-2 rounded-full mr-2"
+                style={{ backgroundColor: tipo === 'consolidado' ? PALETTE.consolidado.primary : '#d1d5db' }}
+              />
+              Consolidado
             </Link>
           </div>
         </div>
