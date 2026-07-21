@@ -330,10 +330,13 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
         });
         if (isOccupied) diasEmUso++;
       }
+      const turmasNaSala = filteredTurmas.filter((t: any) => t.sala === s.nome);
+      const totalOperadoresSala = metricsAll.filter(m => turmasNaSala.some((t: any) => t.numero_turma === m.turma)).length;
       return {
         name: s.nome,
         dias: diasEmUso,
-        turmas: filteredTurmas.filter((t: any) => t.sala === s.nome).map((t: any) => t.numero_turma),
+        turmas: turmasNaSala.map((t: any) => t.numero_turma),
+        operadores: totalOperadoresSala,
       };
     }).filter((s: any) => s.dias > 0);
 
@@ -709,75 +712,78 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
           </div>
         </div>
 
-        {/* ── Salas ── */}
+        {/* ── Salas (Ocupação e Detalhes/Ensalamento) ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-            <div className="mb-3">
-              <h2 className="text-sm font-bold text-gray-800">Ocupação de Salas</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Distribuição de dias ocupados por sala</p>
-            </div>
-            <div className="h-52">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={data.salaStats}
-                    dataKey="dias"
-                    nameKey="name"
-                    cx="50%"
-                    cy="45%"
-                    innerRadius={40}
-                    outerRadius={65}
-                    paddingAngle={2}
-                  >
-                    {data.salaStats.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={SALA_COLORS[index % SALA_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<CustomPieTooltip />} />
-                  <Legend 
-                    verticalAlign="bottom" 
-                    align="center"
-                    iconSize={10}
-                    wrapperStyle={{ fontSize: '11px', paddingTop: '4px' }}
-                    formatter={(value, entry: any) => {
-                      const { payload } = entry;
-                      const total = data.salaStats.reduce((acc: number, curr: any) => acc + curr.dias, 0);
-                      const percent = total > 0 ? ((payload.dias / total) * 100).toFixed(0) : 0;
-                      return <span className="text-gray-700 font-medium">{value} ({percent}%)</span>;
-                    }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+          {/* Gráfico de Pizza */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex flex-col">
+            <h2 className="text-sm font-bold text-gray-800">Ocupação de Salas</h2>
+            <p className="text-xs text-gray-400 mt-0.5 mb-2">Distribuição de dias ocupados por sala</p>
+            <div className="flex-1 min-h-[220px] flex items-center justify-center">
+              {data.salaStats.length === 0 ? (
+                <p className="text-xs text-gray-400">Nenhuma sala ocupada no período</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie
+                      data={data.salaStats}
+                      dataKey="dias"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={85}
+                      paddingAngle={4}
+                    >
+                      {data.salaStats.map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={SALA_COLORS[index % SALA_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip content={<CustomPieTooltip />} />
+                    <Legend
+                      formatter={(value: string, entry: any) => {
+                        const totalDias = data.salaStats.reduce((acc: number, curr: any) => acc + curr.dias, 0);
+                        const percent = totalDias > 0 ? ((entry.payload.dias / totalDias) * 100).toFixed(0) : 0;
+                        return <span className="text-xs text-gray-600 font-medium">{value} ({percent}%)</span>;
+                      }}
+                      layout="horizontal"
+                      align="center"
+                      verticalAlign="bottom"
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-            <div className="mb-3">
-              <h2 className="text-sm font-bold text-gray-800">Detalhes das Salas</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Turmas alocadas em cada sala no período</p>
-            </div>
-            <div className="space-y-3 overflow-y-auto max-h-52 pr-1">
-              {data.salaStats.map((s: any, i: number) => (
-                <div key={i} className="flex items-center justify-between p-2.5 rounded-lg bg-gray-50 border border-gray-100">
-                  <div className="flex items-center gap-2.5">
-                    <span
-                      className="w-3 h-3 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: SALA_COLORS[i % SALA_COLORS.length] }}
-                    />
-                    <div>
-                      <p className="text-xs font-semibold text-gray-800">{s.name}</p>
-                      <p className="text-[11px] text-gray-400">
-                        Turmas: {s.turmas.length > 0 ? s.turmas.join(', ') : 'Nenhuma'}
-                      </p>
+          {/* Detalhes / Ensalamento com a nova coluna de operadores */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex flex-col">
+            <h2 className="text-sm font-bold text-gray-800">Detalhes das Salas</h2>
+            <p className="text-xs text-gray-400 mt-0.5 mb-4">Turmas alocadas em cada sala no período</p>
+            <div className="flex-1 space-y-3 overflow-y-auto max-h-[240px]">
+              {data.salaStats.length === 0 ? (
+                <p className="text-xs text-gray-400">Nenhuma sala alocada no período</p>
+              ) : (
+                data.salaStats.map((s: any, i: number) => (
+                  <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-gray-50 border border-gray-100">
+                    <div className="flex items-center gap-3">
+                      <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: SALA_COLORS[i % SALA_COLORS.length] }} />
+                      <div>
+                        <p className="text-xs font-bold text-gray-800">{s.name}</p>
+                        <p className="text-[11px] text-gray-500">Turmas: {s.turmas.length > 0 ? s.turmas.join(', ') : 'Nenhuma'}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 text-right">
+                      {/* Nova coluna adicionada com a quantidade de operadores */}
+                      <div>
+                        <p className="text-[10px] text-gray-400 font-medium uppercase">Operadores</p>
+                        <p className="text-xs font-bold text-gray-800">{s.operadores}</p>
+                      </div>
+                      <div className="bg-white px-2.5 py-1 rounded-md border border-gray-200 shadow-sm">
+                        <span className="text-xs font-bold text-gray-700">{s.dias} dias</span>
+                      </div>
                     </div>
                   </div>
-                  <span className="text-xs font-bold text-gray-700 bg-white px-2 py-1 rounded border border-gray-200 shadow-xs">
-                    {s.dias} {s.dias === 1 ? 'dia' : 'dias'}
-                  </span>
-                </div>
-              ))}
-              {data.salaStats.length === 0 && (
-                <p className="text-xs text-gray-400 text-center py-8">Nenhuma sala utilizada no período.</p>
+                ))
               )}
             </div>
           </div>
