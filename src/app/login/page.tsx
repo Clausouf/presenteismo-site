@@ -6,27 +6,19 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Lock, User, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import Image from 'next/image';
 
-// ── ÍCONE SVG DA LOGO (igual à sidebar) ─────────────────────────────────────
+// ── LOGO COM IMAGEM DA PASTA PUBLIC ────────────────────────────────────────
 function LogoIcon({ size = 48 }: { size?: number }) {
   return (
-    <svg
+    <Image
+      src="/logo.png"
+      alt="Presenteismo Logo"
       width={size}
       height={size}
-      viewBox="0 0 48 48"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <circle cx="24" cy="24" r="24" fill="#052e16" />
-      <circle cx="24" cy="24" r="18" fill="#14532d" stroke="#166534" strokeWidth="1.5" />
-      <path
-        d="M14 24.5L20.5 31L34 17"
-        stroke="#4ade80"
-        strokeWidth="3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+      style={{ width: size, height: size, objectFit: 'contain' }}
+      priority
+    />
   );
 }
 
