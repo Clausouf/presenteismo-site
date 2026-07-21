@@ -129,12 +129,40 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
   const [grupo30Op, setGrupo30Op] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // Estados para listagem de salas e gestão dos operadores atuais
+  const [salasDisponiveis, setSalasDisponiveis] = useState<string[]>([]);
+  const [colabsAtuais, setColabsAtuais] = useState<any[]>(colaboradoresAtuais || []);
+
+  useEffect(() => {
+    async function carregarSalas() {
+      const { data } = await supabase.from('turmas').select('sala');
+      if (data) {
+        const unicas = Array.from(new Set(data.map(t => t.sala).filter(Boolean))) as string[];
+        setSalasDisponiveis(unicas);
+      }
+    }
+    carregarSalas();
+  }, []);
+
+  const handleRemoveColabAtual = async (matricula: string) => {
+    if (!confirm('Deseja realmente excluir este operador da turma?')) return;
+    try {
+      await supabase.from('diario_presenca').delete().eq('numero_turma', turma.numero_turma).eq('matricula', matricula);
+      const { error } = await supabase.from('colaboradores').delete().eq('numero_turma', turma.numero_turma).eq('matricula', matricula);
+      if (error) throw new Error('Erro ao excluir operador: ' + error.message);
+
+      setColabsAtuais(colabsAtuais.filter(c => c.matricula !== matricula));
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
   const handleAddLocalOperador = () => {
     if (!nomeOp.trim() || !matriculaOp.trim()) {
       alert('Preencha pelo menos o Nome e a Matrícula do operador.');
       return;
     }
-    const existeAtual = colaboradoresAtuais.some(c => c.matricula === matriculaOp);
+    const existeAtual = colabsAtuais.some(c => c.matricula === matriculaOp);
     const existeNovo = novosOperadores.some(o => o.matricula === matriculaOp);
     if (existeAtual || existeNovo) {
       alert('Já existe um operador com esta matrícula nesta turma ou na lista de novos.');
@@ -212,7 +240,7 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
             </div>
             <div>
               <p className="text-white font-bold text-sm leading-tight">Editar Turma {turma.numero_turma}</p>
-              <p className="text-slate-400 text-xs mt-0.5">Altere sala, datas e adicione operadores</p>
+              <p className="text-slate-400 text-xs mt-0.5">Altere sala, datas e gerencie operadores</p>
             </div>
           </div>
           <button
@@ -227,13 +255,22 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
               <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1">Sala</label>
-              <input
-                type="text"
-                value={sala}
-                onChange={(e) => setSala(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs text-gray-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-300"
-                placeholder="Ex: Sala 01"
-              />
+              <div className="relative">
+                <select
+                  value={sala}
+                  onChange={(e) => setSala(e.target.value)}
+                  className="w-full appearance-none bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-300 pr-8 cursor-pointer"
+                >
+                  <option value="">Selecione uma sala...</option>
+                  {salasDisponiveis.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                  {sala && !salasDisponiveis.includes(sala) && (
+                    <option value={sala}>{sala}</option>
+                  )}
+                </select>
+                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+              </div>
             </div>
             <div>
               <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1">Início do Treinamento</label>
@@ -257,9 +294,41 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
 
           <hr className="border-gray-100 my-2" />
 
+          {/* ── LISTAGEM E EXCLUSÃO DE OPERADORES JÁ ADICIONADOS ── */}
           <div>
             <h3 className="text-xs font-bold text-gray-800 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-              <User className="w-3.5 h-3.5 text-blue-600" /> Adicionar Operadores na Turma
+              <User className="w-3.5 h-3.5 text-blue-600" /> Operadores Atuais na Turma ({colabsAtuais.length})
+            </h3>
+            {colabsAtuais.length === 0 ? (
+              <p className="text-xs text-gray-400 italic mb-3">Nenhum operador cadastrado nesta turma.</p>
+            ) : (
+              <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 mb-4">
+                {colabsAtuais.map((c) => (
+                  <div key={c.matricula} className="flex items-center justify-between bg-gray-50 border border-gray-100 px-3 py-1.5 rounded-lg text-xs">
+                    <div>
+                      <span className="font-bold text-gray-800">{c.nome}</span>
+                      <span className="text-gray-500 ml-2">({c.matricula})</span>
+                      {c.jornada && <span className="text-gray-400 ml-2">— {c.jornada}</span>}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveColabAtual(c.matricula)}
+                      className="text-rose-500 hover:text-rose-700 p-1 rounded transition-colors"
+                      title="Excluir operador"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <hr className="border-gray-100 my-2" />
+
+          <div>
+            <h3 className="text-xs font-bold text-gray-800 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+              <Plus className="w-3.5 h-3.5 text-blue-600" /> Adicionar Novos Operadores
             </h3>
             
             <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 space-y-3">
