@@ -11,13 +11,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
 } from 'recharts';
-
-const SALA_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
 const PALETTE = {
   treinamento: { primary: '#10b981', light: '#d1fae5', text: '#065f46' },
@@ -162,17 +156,6 @@ const CustomBarTooltip = ({ active, payload, label }: any) => {
   );
 };
 
-// Tooltip customizado — pie chart de salas
-const CustomPieTooltip = ({ active, payload }: any) => {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-xs">
-      <p className="font-semibold text-gray-700">{payload[0].name}</p>
-      <p className="text-gray-600">{payload[0].value} dias ocupados</p>
-    </div>
-  );
-};
-
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recrutamento' | 'consolidado' }) {
   const [loading, setLoading] = useState(true);
@@ -241,23 +224,33 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
         const totalDiasEsperados = logs.length;
         const logsNormalized = logs.map((l: any) => normalize(l.tipo_registro));
 
-        // ATUALIZAÇÃO: Incluindo desligamento e desistência no cálculo de ABS
-        const countAbs = logsNormalized.filter((t: string) =>
+        const baseAbs = logsNormalized.filter((t: string) =>
           t.includes('falta') || t.includes('desligamento') || t.includes('desistencia')
         ).length;
+        
+        const countAbsAtestado = tipo === 'treinamento' 
+          ? logsNormalized.filter((t: string) => t.includes('atestado')).length 
+          : 0;
+
+        // No Consolidado, o atestado entra dentro do cálculo de ABS junto com as faltas
+        const countAbs = tipo === 'consolidado'
+          ? baseAbs + logsNormalized.filter((t: string) => t.includes('atestado')).length
+          : baseAbs;
+
         const countPresenca = logsNormalized.filter((t: string) => t.includes('presenca') || t.includes('presente')).length;
         const countTO = logsNormalized.filter((t: string) =>
           ['desistencia', 'desligamento', 'desligamento a pedido'].includes(t)
         ).length;
 
         const category: 'recrutamento' | 'treinamento' =
-          countPresenca === 0 && countAbs > 0 ? 'recrutamento' : 'treinamento';
+          countPresenca === 0 && baseAbs > 0 ? 'recrutamento' : 'treinamento';
 
         return {
           category,
           matricula: c.matricula,
           nome: c.nome || c.matricula,
           countAbs,
+          countAbsAtestado,
           countTO,
           countPresenca,
           totalDiasEsperados,
@@ -283,14 +276,19 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       
       const totalDiasEsperadosTurma = todosDaTurma.reduce((acc, m) => acc + m.totalDiasEsperados, 0);
       const absCategoria = categoriaDaTurma.reduce((acc, m) => acc + m.countAbs, 0);
+      const absAtestadoCategoria = tipo === 'treinamento' 
+        ? categoriaDaTurma.reduce((acc, m) => acc + m.countAbsAtestado, 0) 
+        : 0;
       const totalOperadoresTurma = todosDaTurma.length;
       const operadoresDesligados = categoriaDaTurma.filter(m => m.countTO > 0).length;
       return {
         turma: tNum,
         op: todosDaTurma[0]?.op || 'Sem Operação',
         abs: totalDiasEsperadosTurma > 0 ? (absCategoria / totalDiasEsperadosTurma) * 100 : 0,
+        absAtestado: totalDiasEsperadosTurma > 0 ? (absAtestadoCategoria / totalDiasEsperadosTurma) * 100 : 0,
         to:  totalOperadoresTurma  > 0 ? (operadoresDesligados / totalOperadoresTurma) * 100 : 0,
         _absRaw:  absCategoria,
+        _absAtestadoRaw: absAtestadoCategoria,
         _toRaw:   operadoresDesligados,
         _diasRaw: totalDiasEsperadosTurma,
         _opRaw:   totalOperadoresTurma,
@@ -318,29 +316,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       };
     });
 
-    // ─── PASSO 6: ocupação de salas ───────────────────────────────────────────
-    const salaStats = raw.salas.map((s: any) => {
-      let diasEmUso = 0;
-      for (let d = new Date(startOfMonth); d <= endOfMonth; d.setDate(d.getDate() + 1)) {
-        const isOccupied = filteredTurmas.some((t: any) => {
-          if (t.sala !== s.nome) return false;
-          const start = new Date(t.data_inicio);
-          const end = t.data_fim ? new Date(t.data_fim) : new Date(2099, 11, 31);
-          return d >= start && d <= end;
-        });
-        if (isOccupied) diasEmUso++;
-      }
-      const turmasNaSala = filteredTurmas.filter((t: any) => t.sala === s.nome);
-      const totalOperadoresSala = metricsAll.filter(m => turmasNaSala.some((t: any) => t.numero_turma === m.turma)).length;
-      return {
-        name: s.nome,
-        dias: diasEmUso,
-        turmas: turmasNaSala.map((t: any) => t.numero_turma),
-        operadores: totalOperadoresSala,
-      };
-    }).filter((s: any) => s.dias > 0);
-
-    // ─── PASSO 7: dados para exportação Excel ────────────────────────────────
+    // ─── PASSO 6: dados para exportação Excel ────────────────────────────────
     const resumoRows: (string | number)[][] = [
       ['Dashboard', tipo.toUpperCase()],
       ['Período', selectedMonth],
@@ -357,14 +333,29 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       ['Operação', 'ABS (%)', 'TO (%)'],
       ...ranking.map(o => [o.nome, parseFloat(o.abs.toFixed(2)), parseFloat(o.to.toFixed(2))]),
     ];
+
     const rankingRows: (string | number)[][] = [
-      ['Turma', 'Operação', 'ABS (%)', 'TO (%)'],
-      ...rankingTurmas.map(t => [
-        `Turma ${t.turma}`, t.op,
-        parseFloat(t.abs.toFixed(2)),
-        parseFloat(t.to.toFixed(2)),
-      ]),
+      tipo === 'treinamento'
+        ? ['Turma', 'Operação', 'ABS (%)', 'ABS Atestado (%)', 'TO (%)']
+        : ['Turma', 'Operação', 'ABS (%)', 'TO (%)'],
+      ...rankingTurmas.map(t =>
+        tipo === 'treinamento'
+          ? [
+              `Turma ${t.turma}`,
+              t.op,
+              parseFloat(t.abs.toFixed(2)),
+              parseFloat(t.absAtestado.toFixed(2)),
+              parseFloat(t.to.toFixed(2)),
+            ]
+          : [
+              `Turma ${t.turma}`,
+              t.op,
+              parseFloat(t.abs.toFixed(2)),
+              parseFloat(t.to.toFixed(2)),
+            ]
+      ),
     ];
+
     const [y, m] = selectedMonth.split('-').map(Number);
     const start = new Date(y, m - 1, 1);
     const end   = new Date(y, m, 0, 23, 59, 59);
@@ -393,7 +384,6 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       to:  totalOpGlobal   > 0 ? (totalToGlobal  / totalOpGlobal)  * 100 : 0,
       ranking,
       rankingTurmas,
-      salaStats,
       exportSheets: { resumoRows, rankingRows, diarioRows },
     };
   }, [loading, raw, tipo, selectedMonth, selectedOp, selectedTurma]);
@@ -425,7 +415,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
     );
   }
 
-  const maxRankingVal = Math.max(...data.rankingTurmas.map((t: any) => Math.max(t.abs, t.to)), 1);
+  const maxRankingVal = Math.max(...data.rankingTurmas.map((t: any) => Math.max(t.abs, t.absAtestado || 0, t.to)), 1);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -662,6 +652,9 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
                   <th className="text-left py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Turma</th>
                   <th className="text-left py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Operação</th>
                   <th className="text-right py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">ABS</th>
+                  {tipo === 'treinamento' && (
+                    <th className="text-right py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">ABS Atestado</th>
+                  )}
                   <th className="text-right py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">TO</th>
                   <th className="py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-48">Distribuição</th>
                 </tr>
@@ -678,6 +671,13 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
                         {t.abs.toFixed(1)}%
                       </span>
                     </td>
+                    {tipo === 'treinamento' && (
+                      <td className="py-3 px-3 text-right">
+                        <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800">
+                          {t.absAtestado.toFixed(1)}%
+                        </span>
+                      </td>
+                    )}
                     <td className="py-3 px-3 text-right">
                       <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-50 text-red-800">
                         {t.to.toFixed(1)}%
@@ -685,23 +685,28 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
                     </td>
                     <td className="py-3 px-3">
                       <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] text-gray-400 w-6">ABS</span>
-                          <div className="flex-1 bg-amber-100 rounded-full h-1.5 overflow-hidden">
-                            <div
-                              className="h-full rounded-full"
-                              style={{ width: `${(t.abs / maxRankingVal) * 100}%`, backgroundColor: '#f59e0b' }}
-                            />
+                        <div className="flex items-center gap-2 text-[10px] text-gray-500">
+                          <span className="w-6">ABS</span>
+                          <div className="flex-1 bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                            <div className="bg-amber-500 h-full rounded-full" style={{ width: `${Math.min(100, (t.abs / maxRankingVal) * 100)}%` }} />
                           </div>
+                          <span className="w-8 text-right font-medium">{t.abs.toFixed(1)}%</span>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] text-gray-400 w-6">TO</span>
-                          <div className="flex-1 bg-red-100 rounded-full h-1.5 overflow-hidden">
-                            <div
-                              className="h-full rounded-full"
-                              style={{ width: `${(t.to / maxRankingVal) * 100}%`, backgroundColor: '#ef4444' }}
-                            />
+                        {tipo === 'treinamento' && (
+                          <div className="flex items-center gap-2 text-[10px] text-gray-500">
+                            <span className="w-6">Atest</span>
+                            <div className="flex-1 bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                              <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${Math.min(100, (t.absAtestado / maxRankingVal) * 100)}%` }} />
+                            </div>
+                            <span className="w-8 text-right font-medium">{t.absAtestado.toFixed(1)}%</span>
                           </div>
+                        )}
+                        <div className="flex items-center gap-2 text-[10px] text-gray-500">
+                          <span className="w-6">TO</span>
+                          <div className="flex-1 bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                            <div className="bg-red-500 h-full rounded-full" style={{ width: `${Math.min(100, (t.to / maxRankingVal) * 100)}%` }} />
+                          </div>
+                          <span className="w-8 text-right font-medium">{t.to.toFixed(1)}%</span>
                         </div>
                       </div>
                     </td>
@@ -709,83 +714,6 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
                 ))}
               </tbody>
             </table>
-          </div>
-        </div>
-
-        {/* ── Salas (Ocupação e Detalhes/Ensalamento) ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {/* Gráfico de Pizza */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex flex-col">
-            <h2 className="text-sm font-bold text-gray-800">Ocupação de Salas</h2>
-            <p className="text-xs text-gray-400 mt-0.5 mb-2">Distribuição de dias ocupados por sala</p>
-            <div className="flex-1 min-h-[220px] flex items-center justify-center">
-              {data.salaStats.length === 0 ? (
-                <p className="text-xs text-gray-400">Nenhuma sala ocupada no período</p>
-              ) : (
-                <ResponsiveContainer width="100%" height={220}>
-                  <PieChart>
-                    <Pie
-                      data={data.salaStats}
-                      dataKey="dias"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={85}
-                      paddingAngle={4}
-                    >
-                      {data.salaStats.map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={SALA_COLORS[index % SALA_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip content={<CustomPieTooltip />} />
-                    <Legend
-                      formatter={(value: string, entry: any) => {
-                        const totalDias = data.salaStats.reduce((acc: number, curr: any) => acc + curr.dias, 0);
-                        const percent = totalDias > 0 ? ((entry.payload.dias / totalDias) * 100).toFixed(0) : 0;
-                        return <span className="text-xs text-gray-600 font-medium">{value} ({percent}%)</span>;
-                      }}
-                      layout="horizontal"
-                      align="center"
-                      verticalAlign="bottom"
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-          </div>
-
-          {/* Detalhes / Ensalamento com a nova coluna de operadores */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex flex-col">
-            <h2 className="text-sm font-bold text-gray-800">Detalhes das Salas</h2>
-            <p className="text-xs text-gray-400 mt-0.5 mb-4">Turmas alocadas em cada sala no período</p>
-            <div className="flex-1 space-y-3 overflow-y-auto max-h-[240px]">
-              {data.salaStats.length === 0 ? (
-                <p className="text-xs text-gray-400">Nenhuma sala alocada no período</p>
-              ) : (
-                data.salaStats.map((s: any, i: number) => (
-                  <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-gray-50 border border-gray-100">
-                    <div className="flex items-center gap-3">
-                      <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: SALA_COLORS[i % SALA_COLORS.length] }} />
-                      <div>
-                        <p className="text-xs font-bold text-gray-800">{s.name}</p>
-                        <p className="text-[11px] text-gray-500">Turmas: {s.turmas.length > 0 ? s.turmas.join(', ') : 'Nenhuma'}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4 text-right">
-                      {/* Nova coluna adicionada com a quantidade de operadores */}
-                      <div>
-                        <p className="text-[10px] text-gray-400 font-medium uppercase">Operadores</p>
-                        <p className="text-xs font-bold text-gray-800">{s.operadores}</p>
-                      </div>
-                      <div className="bg-white px-2.5 py-1 rounded-md border border-gray-200 shadow-sm">
-                        <span className="text-xs font-bold text-gray-700">{s.dias} dias</span>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
           </div>
         </div>
       </div>
