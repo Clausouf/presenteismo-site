@@ -11,7 +11,13 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
 } from 'recharts';
+
+const SALA_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
 const PALETTE = {
   treinamento: { primary: '#10b981', light: '#d1fae5', text: '#065f46' },
@@ -156,6 +162,17 @@ const CustomBarTooltip = ({ active, payload, label }: any) => {
   );
 };
 
+// Tooltip customizado — pie chart de salas
+const CustomPieTooltip = ({ active, payload }: any) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-xs">
+      <p className="font-semibold text-gray-700">{payload[0].name}</p>
+      <p className="text-gray-600">{payload[0].value} dias ocupados</p>
+    </div>
+  );
+};
+
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recrutamento' | 'consolidado' }) {
   const [loading, setLoading] = useState(true);
@@ -224,33 +241,23 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
         const totalDiasEsperados = logs.length;
         const logsNormalized = logs.map((l: any) => normalize(l.tipo_registro));
 
-        const baseAbs = logsNormalized.filter((t: string) =>
+        // ATUALIZAÇÃO: Incluindo desligamento e desistência no cálculo de ABS
+        const countAbs = logsNormalized.filter((t: string) =>
           t.includes('falta') || t.includes('desligamento') || t.includes('desistencia')
         ).length;
-        
-        const countAbsAtestado = tipo === 'treinamento' 
-          ? logsNormalized.filter((t: string) => t.includes('atestado')).length 
-          : 0;
-
-        // No Consolidado, o atestado entra dentro do cálculo de ABS junto com as faltas
-        const countAbs = tipo === 'consolidado'
-          ? baseAbs + logsNormalized.filter((t: string) => t.includes('atestado')).length
-          : baseAbs;
-
         const countPresenca = logsNormalized.filter((t: string) => t.includes('presenca') || t.includes('presente')).length;
         const countTO = logsNormalized.filter((t: string) =>
           ['desistencia', 'desligamento', 'desligamento a pedido'].includes(t)
         ).length;
 
         const category: 'recrutamento' | 'treinamento' =
-          countPresenca === 0 && baseAbs > 0 ? 'recrutamento' : 'treinamento';
+          countPresenca === 0 && countAbs > 0 ? 'recrutamento' : 'treinamento';
 
         return {
           category,
           matricula: c.matricula,
           nome: c.nome || c.matricula,
           countAbs,
-          countAbsAtestado,
           countTO,
           countPresenca,
           totalDiasEsperados,
@@ -276,19 +283,14 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       
       const totalDiasEsperadosTurma = todosDaTurma.reduce((acc, m) => acc + m.totalDiasEsperados, 0);
       const absCategoria = categoriaDaTurma.reduce((acc, m) => acc + m.countAbs, 0);
-      const absAtestadoCategoria = tipo === 'treinamento' 
-        ? categoriaDaTurma.reduce((acc, m) => acc + m.countAbsAtestado, 0) 
-        : 0;
       const totalOperadoresTurma = todosDaTurma.length;
       const operadoresDesligados = categoriaDaTurma.filter(m => m.countTO > 0).length;
       return {
         turma: tNum,
         op: todosDaTurma[0]?.op || 'Sem Operação',
         abs: totalDiasEsperadosTurma > 0 ? (absCategoria / totalDiasEsperadosTurma) * 100 : 0,
-        absAtestado: totalDiasEsperadosTurma > 0 ? (absAtestadoCategoria / totalDiasEsperadosTurma) * 100 : 0,
         to:  totalOperadoresTurma  > 0 ? (operadoresDesligados / totalOperadoresTurma) * 100 : 0,
         _absRaw:  absCategoria,
-        _absAtestadoRaw: absAtestadoCategoria,
         _toRaw:   operadoresDesligados,
         _diasRaw: totalDiasEsperadosTurma,
         _opRaw:   totalOperadoresTurma,
@@ -301,40 +303,42 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
     const totalOpGlobal   = rankingTurmas.reduce((acc, t) => acc + t._opRaw,   0);
     const totalToGlobal   = rankingTurmas.reduce((acc, t) => acc + t._toRaw,   0);
 
-    // ─── PASSO 5: ranking por operação (incluindo absAtestado para treinamento) ───────────
+    // ─── PASSO 5: ranking por operação ───────────────────────────────────────────
     const opsUnicas = [...new Set(rankingTurmas.map(t => t.op))];
     const ranking = opsUnicas.map(op => {
       const turmasDaOp = rankingTurmas.filter(t => t.op === op);
       const opDias = turmasDaOp.reduce((acc, t) => acc + t._diasRaw, 0);
       const opAbs  = turmasDaOp.reduce((acc, t) => acc + t._absRaw,  0);
-      const opAbsAtestado = turmasDaOp.reduce((acc, t) => acc + t._absAtestadoRaw, 0);
       const opOp   = turmasDaOp.reduce((acc, t) => acc + t._opRaw,   0);
       const opTo   = turmasDaOp.reduce((acc, t) => acc + t._toRaw,   0);
       return {
         nome: op,
         abs: opDias > 0 ? (opAbs / opDias) * 100 : 0,
-        absAtestado: opDias > 0 ? (opAbsAtestado / opDias) * 100 : 0,
         to:  opOp  > 0 ? (opTo  / opOp)  * 100 : 0,
       };
     });
 
-    // ─── PASSO 6: dados de ensalamento / ocupação de salas ────────────────────
-    const ensalamentoData = raw.salas.map((sala: any) => {
-      const turmasNaSala = raw.turmas.filter((t: any) =>
-        t.sala_id === sala.id || t.sala === sala.nome || t.sala === sala.id
-      );
-      const turmaNums = turmasNaSala.map((t: any) => t.numero_turma);
-      const totalAlunos = raw.colabs.filter((c: any) => turmaNums.includes(c.numero_turma)).length;
-      const capacidade = sala.capacidade || sala.capacidade_maxima || 30;
-      const ocupacaoPct = capacidade > 0 ? (totalAlunos / capacidade) * 100 : 0;
+    // ─── PASSO 6: ocupação de salas ───────────────────────────────────────────
+    const salaStats = raw.salas.map((s: any) => {
+      let diasEmUso = 0;
+      for (let d = new Date(startOfMonth); d <= endOfMonth; d.setDate(d.getDate() + 1)) {
+        const isOccupied = filteredTurmas.some((t: any) => {
+          if (t.sala !== s.nome) return false;
+          const start = new Date(t.data_inicio);
+          const end = t.data_fim ? new Date(t.data_fim) : new Date(2099, 11, 31);
+          return d >= start && d <= end;
+        });
+        if (isOccupied) diasEmUso++;
+      }
+      const turmasNaSala = filteredTurmas.filter((t: any) => t.sala === s.nome);
+      const totalOperadoresSala = metricsAll.filter(m => turmasNaSala.some((t: any) => t.numero_turma === m.turma)).length;
       return {
-        nomeSala: sala.nome || `Sala ${sala.id}`,
-        capacidade,
-        totalAlunos,
-        ocupacaoPct,
-        turmas: turmaNums.join(', ') || 'Nenhuma',
+        name: s.nome,
+        dias: diasEmUso,
+        turmas: turmasNaSala.map((t: any) => t.numero_turma),
+        operadores: totalOperadoresSala,
       };
-    });
+    }).filter((s: any) => s.dias > 0);
 
     // ─── PASSO 7: dados para exportação Excel ────────────────────────────────
     const resumoRows: (string | number)[][] = [
@@ -350,38 +354,17 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       ['TO (%)', parseFloat((totalOpGlobal   > 0 ? (totalToGlobal  / totalOpGlobal)  * 100 : 0).toFixed(2))],
       [],
       ['RANKING POR OPERAÇÃO'],
-      tipo === 'treinamento'
-        ? ['Operação', 'ABS (%)', 'ABS Atestado (%)', 'TO (%)']
-        : ['Operação', 'ABS (%)', 'TO (%)'],
-      ...ranking.map(o =>
-        tipo === 'treinamento'
-          ? [o.nome, parseFloat(o.abs.toFixed(2)), parseFloat(o.absAtestado.toFixed(2)), parseFloat(o.to.toFixed(2))]
-          : [o.nome, parseFloat(o.abs.toFixed(2)), parseFloat(o.to.toFixed(2))]
-      ),
+      ['Operação', 'ABS (%)', 'TO (%)'],
+      ...ranking.map(o => [o.nome, parseFloat(o.abs.toFixed(2)), parseFloat(o.to.toFixed(2))]),
     ];
-
     const rankingRows: (string | number)[][] = [
-      tipo === 'treinamento'
-        ? ['Turma', 'Operação', 'ABS (%)', 'ABS Atestado (%)', 'TO (%)']
-        : ['Turma', 'Operação', 'ABS (%)', 'TO (%)'],
-      ...rankingTurmas.map(t =>
-        tipo === 'treinamento'
-          ? [
-              `Turma ${t.turma}`,
-              t.op,
-              parseFloat(t.abs.toFixed(2)),
-              parseFloat(t.absAtestado.toFixed(2)),
-              parseFloat(t.to.toFixed(2)),
-            ]
-          : [
-              `Turma ${t.turma}`,
-              t.op,
-              parseFloat(t.abs.toFixed(2)),
-              parseFloat(t.to.toFixed(2)),
-            ]
-      ),
+      ['Turma', 'Operação', 'ABS (%)', 'TO (%)'],
+      ...rankingTurmas.map(t => [
+        `Turma ${t.turma}`, t.op,
+        parseFloat(t.abs.toFixed(2)),
+        parseFloat(t.to.toFixed(2)),
+      ]),
     ];
-
     const [y, m] = selectedMonth.split('-').map(Number);
     const start = new Date(y, m - 1, 1);
     const end   = new Date(y, m, 0, 23, 59, 59);
@@ -410,7 +393,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       to:  totalOpGlobal   > 0 ? (totalToGlobal  / totalOpGlobal)  * 100 : 0,
       ranking,
       rankingTurmas,
-      ensalamentoData,
+      salaStats,
       exportSheets: { resumoRows, rankingRows, diarioRows },
     };
   }, [loading, raw, tipo, selectedMonth, selectedOp, selectedTurma]);
@@ -442,7 +425,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
     );
   }
 
-  const maxRankingVal = Math.max(...data.rankingTurmas.map((t: any) => Math.max(t.abs, t.absAtestado || 0, t.to)), 1);
+  const maxRankingVal = Math.max(...data.rankingTurmas.map((t: any) => Math.max(t.abs, t.to)), 1);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -451,7 +434,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-xl font-bold text-gray-900">Dashboard de Presença</h1>
-            <p className="text-sm text-gray-500 mt-0.5">Acompanhamento de absenteísmo, turnover e ensalamento</p>
+            <p className="text-sm text-gray-500 mt-0.5">Acompanhamento de absenteísmo e turnover</p>
           </div>
           <div className="flex rounded-xl overflow-hidden border border-gray-200 bg-gray-100 p-1 gap-1">
             <Link
@@ -618,17 +601,12 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-sm font-bold text-gray-800">Ranking por Operação</h2>
-              <p className="text-xs text-gray-400 mt-0.5">ABS, TO e indicadores por operação no período</p>
+              <p className="text-xs text-gray-400 mt-0.5">ABS e TO por operação no período</p>
             </div>
             <div className="flex items-center gap-4 text-xs">
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded-sm inline-block bg-amber-400" /> ABS
               </span>
-              {tipo === 'treinamento' && (
-                <span className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded-sm inline-block bg-emerald-500" /> Atestado
-                </span>
-              )}
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded-sm inline-block bg-red-500" /> TO
               </span>
@@ -640,7 +618,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
                 data={data.ranking}
                 layout="vertical"
                 margin={{ top: 0, right: 20, left: 10, bottom: 0 }}
-                barCategoryGap="25%"
+                barCategoryGap="30%"
               >
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
                 <XAxis
@@ -660,58 +638,11 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
                   width={130}
                 />
                 <Tooltip content={<CustomBarTooltip />} cursor={{ fill: '#f9fafb' }} />
-                <Bar dataKey="abs" name="ABS" fill="#f59e0b" radius={[0, 4, 4, 0]} maxBarSize={12} />
-                {tipo === 'treinamento' && (
-                  <Bar dataKey="absAtestado" name="ABS Atestado" fill="#10b981" radius={[0, 4, 4, 0]} maxBarSize={12} />
-                )}
-                <Bar dataKey="to"  name="TO"  fill="#ef4444" radius={[0, 4, 4, 0]} maxBarSize={12} />
+                <Bar dataKey="abs" name="ABS" fill="#f59e0b" radius={[0, 4, 4, 0]} maxBarSize={14} />
+                <Bar dataKey="to"  name="TO"  fill="#ef4444" radius={[0, 4, 4, 0]} maxBarSize={14} />
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
-
-        {/* ── Seção de Ensalamento e Ocupação de Salas ── */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-sm font-bold text-gray-800">Ensalamento e Ocupação de Salas</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Visão de capacidade e ocupação física das salas de treinamento</p>
-            </div>
-          </div>
-          {data.ensalamentoData.length === 0 ? (
-            <p className="text-xs text-gray-500 py-4 text-center">Nenhuma sala cadastrada ou encontrada.</p>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {data.ensalamentoData.map((sala: any, idx: number) => (
-                <div key={idx} className="border border-gray-100 rounded-lg p-4 bg-gray-50 flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-sm font-bold text-gray-800">{sala.nomeSala}</h3>
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
-                        Capacidade: {sala.capacidade}
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-500 mb-3">Turmas: <span className="font-medium text-gray-700">{sala.turmas}</span></p>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-xs text-gray-600">
-                      <span>Ocupação ({sala.totalAlunos} alunos)</span>
-                      <span className="font-semibold">{sala.ocupacaoPct.toFixed(1)}%</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all duration-300"
-                        style={{
-                          width: `${Math.min(100, sala.ocupacaoPct)}%`,
-                          backgroundColor: sala.ocupacaoPct > 100 ? '#dc2626' : sala.ocupacaoPct > 80 ? '#f59e0b' : '#10b981',
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* ── Ranking por Turma (ABS + TO) ── */}
@@ -731,9 +662,6 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
                   <th className="text-left py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Turma</th>
                   <th className="text-left py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Operação</th>
                   <th className="text-right py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">ABS</th>
-                  {tipo === 'treinamento' && (
-                    <th className="text-right py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">ABS Atestado</th>
-                  )}
                   <th className="text-right py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">TO</th>
                   <th className="py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-48">Distribuição</th>
                 </tr>
@@ -750,43 +678,15 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
                         {t.abs.toFixed(1)}%
                       </span>
                     </td>
-                    {tipo === 'treinamento' && (
-                      <td className="py-3 px-3 text-right">
-                        <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800">
-                          {t.absAtestado.toFixed(1)}%
-                        </span>
-                      </td>
-                    )}
                     <td className="py-3 px-3 text-right">
                       <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-50 text-red-800">
                         {t.to.toFixed(1)}%
                       </span>
                     </td>
                     <td className="py-3 px-3">
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-2 text-[10px] text-gray-500">
-                          <span className="w-6">ABS</span>
-                          <div className="flex-1 bg-gray-100 rounded-full h-1.5 overflow-hidden">
-                            <div className="bg-amber-500 h-full rounded-full" style={{ width: `${Math.min(100, (t.abs / maxRankingVal) * 100)}%` }} />
-                          </div>
-                          <span className="w-8 text-right font-medium">{t.abs.toFixed(1)}%</span>
-                        </div>
-                        {tipo === 'treinamento' && (
-                          <div className="flex items-center gap-2 text-[10px] text-gray-500">
-                            <span className="w-6">Atest</span>
-                            <div className="flex-1 bg-gray-100 rounded-full h-1.5 overflow-hidden">
-                              <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${Math.min(100, (t.absAtestado / maxRankingVal) * 100)}%` }} />
-                            </div>
-                            <span className="w-8 text-right font-medium">{t.absAtestado.toFixed(1)}%</span>
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2 text-[10px] text-gray-500">
-                          <span className="w-6">TO</span>
-                          <div className="flex-1 bg-gray-100 rounded-full h-1.5 overflow-hidden">
-                            <div className="bg-red-500 h-full rounded-full" style={{ width: `${Math.min(100, (t.to / maxRankingVal) * 100)}%` }} />
-                          </div>
-                          <span className="w-8 text-right font-medium">{t.to.toFixed(1)}%</span>
-                        </div>
+                      <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden flex">
+                        <div className="bg-amber-400 h-full" style={{ width: `${Math.min(100, (t.abs / maxRankingVal) * 100)}%` }} />
+                        <div className="bg-red-500 h-full" style={{ width: `${Math.min(100, (t.to / maxRankingVal) * 100)}%` }} />
                       </div>
                     </td>
                   </tr>
@@ -794,6 +694,80 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
               </tbody>
             </table>
           </div>
+        </div>
+
+        {/* ── Ensalamento e Ocupação de Salas (Por último na página) ── */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+          <div className="mb-4">
+            <h2 className="text-sm font-bold text-gray-800">Ensalamento e Ocupação de Salas</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Ocupação das salas em utilização durante o mês</p>
+          </div>
+          {data.salaStats.length === 0 ? (
+            <p className="text-xs text-gray-500 text-center py-8">Nenhuma sala em uso no período selecionado.</p>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
+              {/* Gráfico em Pizza */}
+              <div className="h-64 flex items-center justify-center">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={data.salaStats}
+                      dataKey="dias"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={80}
+                      innerRadius={40}
+                      paddingAngle={2}
+                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    >
+                      {data.salaStats.map((entry: any, index: number) => (
+                        <Cell key={`cell-${index}`} fill={SALA_COLORS[index % SALA_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip content={<CustomPieTooltip />} />
+                    <Legend
+                      formatter={(value, entry: any) => {
+                        const totalDias = data.salaStats.reduce((acc: number, curr: any) => acc + curr.dias, 0);
+                        const item = data.salaStats.find((s: any) => s.name === value);
+                        const pct = totalDias > 0 && item ? ((item.dias / totalDias) * 100).toFixed(1) : '0';
+                        return <span className="text-xs text-gray-700 font-medium">{value} ({pct}%)</span>;
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Tabela com Sala, Dias em Uso, Quantidade de Operadores e Turmas */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100">
+                      <th className="text-left py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Sala</th>
+                      <th className="text-center py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Dias em Uso</th>
+                      <th className="text-center py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Operadores</th>
+                      <th className="text-left py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Turmas</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {data.salaStats.map((sala: any, i: number) => (
+                      <tr key={i} className="hover:bg-gray-50 transition-colors">
+                        <td className="py-3 px-3 font-semibold text-gray-800 flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: SALA_COLORS[i % SALA_COLORS.length] }} />
+                          {sala.name}
+                        </td>
+                        <td className="py-3 px-3 text-center text-gray-600 font-medium">{sala.dias}</td>
+                        <td className="py-3 px-3 text-center text-gray-600 font-medium">{sala.operadores}</td>
+                        <td className="py-3 px-3 text-gray-500 text-xs">
+                          {sala.turmas.length > 0 ? sala.turmas.map((t: string) => `Turma ${t}`).join(', ') : '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
