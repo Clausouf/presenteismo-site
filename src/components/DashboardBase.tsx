@@ -245,6 +245,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
         const countAbs = logsNormalized.filter((t: string) =>
           t.includes('falta') || t.includes('desligamento') || t.includes('desistencia')
         ).length;
+        const countAtestado = logsNormalized.filter((t: string) => t.includes('atestado')).length;
         const countPresenca = logsNormalized.filter((t: string) => t.includes('presenca') || t.includes('presente')).length;
         const countTO = logsNormalized.filter((t: string) =>
           ['desistencia', 'desligamento', 'desligamento a pedido'].includes(t)
@@ -258,6 +259,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
           matricula: c.matricula,
           nome: c.nome || c.matricula,
           countAbs,
+          countAtestado,
           countTO,
           countPresenca,
           totalDiasEsperados,
@@ -282,15 +284,21 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
         : todosDaTurma.filter(m => m.category === tipo);
       
       const totalDiasEsperadosTurma = todosDaTurma.reduce((acc, m) => acc + m.totalDiasEsperados, 0);
-      const absCategoria = categoriaDaTurma.reduce((acc, m) => acc + m.countAbs, 0);
+      
+      // No consolidado, o atestado entra como abs no cálculo total de abs
+      const absCategoria = categoriaDaTurma.reduce((acc, m) => acc + m.countAbs + (tipo === 'consolidado' ? m.countAtestado : 0), 0);
+      const atestadoCategoria = categoriaDaTurma.reduce((acc, m) => acc + m.countAtestado, 0);
+
       const totalOperadoresTurma = todosDaTurma.length;
       const operadoresDesligados = categoriaDaTurma.filter(m => m.countTO > 0).length;
       return {
         turma: tNum,
         op: todosDaTurma[0]?.op || 'Sem Operação',
         abs: totalDiasEsperadosTurma > 0 ? (absCategoria / totalDiasEsperadosTurma) * 100 : 0,
+        atestado: totalDiasEsperadosTurma > 0 ? (atestadoCategoria / totalDiasEsperadosTurma) * 100 : 0,
         to:  totalOperadoresTurma  > 0 ? (operadoresDesligados / totalOperadoresTurma) * 100 : 0,
         _absRaw:  absCategoria,
+        _atestadoRaw: atestadoCategoria,
         _toRaw:   operadoresDesligados,
         _diasRaw: totalDiasEsperadosTurma,
         _opRaw:   totalOperadoresTurma,
@@ -309,11 +317,13 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       const turmasDaOp = rankingTurmas.filter(t => t.op === op);
       const opDias = turmasDaOp.reduce((acc, t) => acc + t._diasRaw, 0);
       const opAbs  = turmasDaOp.reduce((acc, t) => acc + t._absRaw,  0);
+      const opAtestado = turmasDaOp.reduce((acc, t) => acc + t._atestadoRaw, 0);
       const opOp   = turmasDaOp.reduce((acc, t) => acc + t._opRaw,   0);
       const opTo   = turmasDaOp.reduce((acc, t) => acc + t._toRaw,   0);
       return {
         nome: op,
         abs: opDias > 0 ? (opAbs / opDias) * 100 : 0,
+        atestado: opDias > 0 ? (opAtestado / opDias) * 100 : 0,
         to:  opOp  > 0 ? (opTo  / opOp)  * 100 : 0,
       };
     });
@@ -354,16 +364,17 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       ['TO (%)', parseFloat((totalOpGlobal   > 0 ? (totalToGlobal  / totalOpGlobal)  * 100 : 0).toFixed(2))],
       [],
       ['RANKING POR OPERAÇÃO'],
-      ['Operação', 'ABS (%)', 'TO (%)'],
-      ...ranking.map(o => [o.nome, parseFloat(o.abs.toFixed(2)), parseFloat(o.to.toFixed(2))]),
+      ['Operação', 'ABS (%)', tipo === 'treinamento' ? 'Atestado (%)' : '', 'TO (%)'].filter(Boolean),
+      ...ranking.map(o => [o.nome, parseFloat(o.abs.toFixed(2)), tipo === 'treinamento' ? parseFloat(o.atestado.toFixed(2)) : null, parseFloat(o.to.toFixed(2))].filter(v => v !== null)),
     ];
     const rankingRows: (string | number)[][] = [
-      ['Turma', 'Operação', 'ABS (%)', 'TO (%)'],
+      ['Turma', 'Operação', 'ABS (%)', tipo === 'treinamento' ? 'Atestado (%)' : '', 'TO (%)'].filter(Boolean),
       ...rankingTurmas.map(t => [
         `Turma ${t.turma}`, t.op,
         parseFloat(t.abs.toFixed(2)),
+        tipo === 'treinamento' ? parseFloat(t.atestado.toFixed(2)) : null,
         parseFloat(t.to.toFixed(2)),
-      ]),
+      ].filter(v => v !== null)),
     ];
     const [y, m] = selectedMonth.split('-').map(Number);
     const start = new Date(y, m - 1, 1);
@@ -425,7 +436,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
     );
   }
 
-  const maxRankingVal = Math.max(...data.rankingTurmas.map((t: any) => Math.max(t.abs, t.to)), 1);
+  const maxRankingVal = Math.max(...data.rankingTurmas.map((t: any) => Math.max(t.abs, t.atestado || 0, t.to)), 1);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -607,6 +618,11 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded-sm inline-block bg-amber-400" /> ABS
               </span>
+              {tipo === 'treinamento' && (
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-sm inline-block bg-blue-500" /> Atestado
+                </span>
+              )}
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded-sm inline-block bg-red-500" /> TO
               </span>
@@ -639,6 +655,9 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
                 />
                 <Tooltip content={<CustomBarTooltip />} cursor={{ fill: '#f9fafb' }} />
                 <Bar dataKey="abs" name="ABS" fill="#f59e0b" radius={[0, 4, 4, 0]} maxBarSize={14} />
+                {tipo === 'treinamento' && (
+                  <Bar dataKey="atestado" name="Atestado" fill="#3b82f6" radius={[0, 4, 4, 0]} maxBarSize={14} />
+                )}
                 <Bar dataKey="to"  name="TO"  fill="#ef4444" radius={[0, 4, 4, 0]} maxBarSize={14} />
               </BarChart>
             </ResponsiveContainer>
@@ -662,6 +681,9 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
                   <th className="text-left py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Turma</th>
                   <th className="text-left py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Operação</th>
                   <th className="text-right py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">ABS</th>
+                  {tipo === 'treinamento' && (
+                    <th className="text-right py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Atestado</th>
+                  )}
                   <th className="text-right py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">TO</th>
                   <th className="py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-48">Distribuição</th>
                 </tr>
@@ -678,6 +700,13 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
                         {t.abs.toFixed(1)}%
                       </span>
                     </td>
+                    {tipo === 'treinamento' && (
+                      <td className="py-3 px-3 text-right">
+                        <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-800">
+                          {t.atestado.toFixed(1)}%
+                        </span>
+                      </td>
+                    )}
                     <td className="py-3 px-3 text-right">
                       <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-50 text-red-800">
                         {t.to.toFixed(1)}%
@@ -686,6 +715,9 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
                     <td className="py-3 px-3">
                       <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden flex">
                         <div className="bg-amber-400 h-full" style={{ width: `${Math.min(100, (t.abs / maxRankingVal) * 100)}%` }} />
+                        {tipo === 'treinamento' && (
+                          <div className="bg-blue-500 h-full" style={{ width: `${Math.min(100, ((t.atestado || 0) / maxRankingVal) * 100)}%` }} />
+                        )}
                         <div className="bg-red-500 h-full" style={{ width: `${Math.min(100, (t.to / maxRankingVal) * 100)}%` }} />
                       </div>
                     </td>
@@ -719,7 +751,6 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
                       outerRadius={80}
                       innerRadius={40}
                       paddingAngle={2}
-                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                     >
                       {data.salaStats.map((entry: any, index: number) => (
                         <Cell key={`cell-${index}`} fill={SALA_COLORS[index % SALA_COLORS.length]} />
