@@ -301,22 +301,42 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
     const totalOpGlobal   = rankingTurmas.reduce((acc, t) => acc + t._opRaw,   0);
     const totalToGlobal   = rankingTurmas.reduce((acc, t) => acc + t._toRaw,   0);
 
-    // ─── PASSO 5: ranking por operação ───────────────────────────────────────────
+    // ─── PASSO 5: ranking por operação (incluindo absAtestado para treinamento) ───────────
     const opsUnicas = [...new Set(rankingTurmas.map(t => t.op))];
     const ranking = opsUnicas.map(op => {
       const turmasDaOp = rankingTurmas.filter(t => t.op === op);
       const opDias = turmasDaOp.reduce((acc, t) => acc + t._diasRaw, 0);
       const opAbs  = turmasDaOp.reduce((acc, t) => acc + t._absRaw,  0);
+      const opAbsAtestado = turmasDaOp.reduce((acc, t) => acc + t._absAtestadoRaw, 0);
       const opOp   = turmasDaOp.reduce((acc, t) => acc + t._opRaw,   0);
       const opTo   = turmasDaOp.reduce((acc, t) => acc + t._toRaw,   0);
       return {
         nome: op,
         abs: opDias > 0 ? (opAbs / opDias) * 100 : 0,
+        absAtestado: opDias > 0 ? (opAbsAtestado / opDias) * 100 : 0,
         to:  opOp  > 0 ? (opTo  / opOp)  * 100 : 0,
       };
     });
 
-    // ─── PASSO 6: dados para exportação Excel ────────────────────────────────
+    // ─── PASSO 6: dados de ensalamento / ocupação de salas ────────────────────
+    const ensalamentoData = raw.salas.map((sala: any) => {
+      const turmasNaSala = raw.turmas.filter((t: any) =>
+        t.sala_id === sala.id || t.sala === sala.nome || t.sala === sala.id
+      );
+      const turmaNums = turmasNaSala.map((t: any) => t.numero_turma);
+      const totalAlunos = raw.colabs.filter((c: any) => turmaNums.includes(c.numero_turma)).length;
+      const capacidade = sala.capacidade || sala.capacidade_maxima || 30;
+      const ocupacaoPct = capacidade > 0 ? (totalAlunos / capacidade) * 100 : 0;
+      return {
+        nomeSala: sala.nome || `Sala ${sala.id}`,
+        capacidade,
+        totalAlunos,
+        ocupacaoPct,
+        turmas: turmaNums.join(', ') || 'Nenhuma',
+      };
+    });
+
+    // ─── PASSO 7: dados para exportação Excel ────────────────────────────────
     const resumoRows: (string | number)[][] = [
       ['Dashboard', tipo.toUpperCase()],
       ['Período', selectedMonth],
@@ -330,8 +350,14 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       ['TO (%)', parseFloat((totalOpGlobal   > 0 ? (totalToGlobal  / totalOpGlobal)  * 100 : 0).toFixed(2))],
       [],
       ['RANKING POR OPERAÇÃO'],
-      ['Operação', 'ABS (%)', 'TO (%)'],
-      ...ranking.map(o => [o.nome, parseFloat(o.abs.toFixed(2)), parseFloat(o.to.toFixed(2))]),
+      tipo === 'treinamento'
+        ? ['Operação', 'ABS (%)', 'ABS Atestado (%)', 'TO (%)']
+        : ['Operação', 'ABS (%)', 'TO (%)'],
+      ...ranking.map(o =>
+        tipo === 'treinamento'
+          ? [o.nome, parseFloat(o.abs.toFixed(2)), parseFloat(o.absAtestado.toFixed(2)), parseFloat(o.to.toFixed(2))]
+          : [o.nome, parseFloat(o.abs.toFixed(2)), parseFloat(o.to.toFixed(2))]
+      ),
     ];
 
     const rankingRows: (string | number)[][] = [
@@ -384,6 +410,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       to:  totalOpGlobal   > 0 ? (totalToGlobal  / totalOpGlobal)  * 100 : 0,
       ranking,
       rankingTurmas,
+      ensalamentoData,
       exportSheets: { resumoRows, rankingRows, diarioRows },
     };
   }, [loading, raw, tipo, selectedMonth, selectedOp, selectedTurma]);
@@ -424,7 +451,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-xl font-bold text-gray-900">Dashboard de Presença</h1>
-            <p className="text-sm text-gray-500 mt-0.5">Acompanhamento de absenteísmo e turnover</p>
+            <p className="text-sm text-gray-500 mt-0.5">Acompanhamento de absenteísmo, turnover e ensalamento</p>
           </div>
           <div className="flex rounded-xl overflow-hidden border border-gray-200 bg-gray-100 p-1 gap-1">
             <Link
@@ -591,12 +618,17 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-sm font-bold text-gray-800">Ranking por Operação</h2>
-              <p className="text-xs text-gray-400 mt-0.5">ABS e TO por operação no período</p>
+              <p className="text-xs text-gray-400 mt-0.5">ABS, TO e indicadores por operação no período</p>
             </div>
             <div className="flex items-center gap-4 text-xs">
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded-sm inline-block bg-amber-400" /> ABS
               </span>
+              {tipo === 'treinamento' && (
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-sm inline-block bg-emerald-500" /> Atestado
+                </span>
+              )}
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded-sm inline-block bg-red-500" /> TO
               </span>
@@ -608,7 +640,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
                 data={data.ranking}
                 layout="vertical"
                 margin={{ top: 0, right: 20, left: 10, bottom: 0 }}
-                barCategoryGap="30%"
+                barCategoryGap="25%"
               >
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
                 <XAxis
@@ -628,11 +660,58 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
                   width={130}
                 />
                 <Tooltip content={<CustomBarTooltip />} cursor={{ fill: '#f9fafb' }} />
-                <Bar dataKey="abs" name="ABS" fill="#f59e0b" radius={[0, 4, 4, 0]} maxBarSize={14} />
-                <Bar dataKey="to"  name="TO"  fill="#ef4444" radius={[0, 4, 4, 0]} maxBarSize={14} />
+                <Bar dataKey="abs" name="ABS" fill="#f59e0b" radius={[0, 4, 4, 0]} maxBarSize={12} />
+                {tipo === 'treinamento' && (
+                  <Bar dataKey="absAtestado" name="ABS Atestado" fill="#10b981" radius={[0, 4, 4, 0]} maxBarSize={12} />
+                )}
+                <Bar dataKey="to"  name="TO"  fill="#ef4444" radius={[0, 4, 4, 0]} maxBarSize={12} />
               </BarChart>
             </ResponsiveContainer>
           </div>
+        </div>
+
+        {/* ── Seção de Ensalamento e Ocupação de Salas ── */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-sm font-bold text-gray-800">Ensalamento e Ocupação de Salas</h2>
+              <p className="text-xs text-gray-400 mt-0.5">Visão de capacidade e ocupação física das salas de treinamento</p>
+            </div>
+          </div>
+          {data.ensalamentoData.length === 0 ? (
+            <p className="text-xs text-gray-500 py-4 text-center">Nenhuma sala cadastrada ou encontrada.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {data.ensalamentoData.map((sala: any, idx: number) => (
+                <div key={idx} className="border border-gray-100 rounded-lg p-4 bg-gray-50 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-sm font-bold text-gray-800">{sala.nomeSala}</h3>
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+                        Capacidade: {sala.capacidade}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mb-3">Turmas: <span className="font-medium text-gray-700">{sala.turmas}</span></p>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs text-gray-600">
+                      <span>Ocupação ({sala.totalAlunos} alunos)</span>
+                      <span className="font-semibold">{sala.ocupacaoPct.toFixed(1)}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-300"
+                        style={{
+                          width: `${Math.min(100, sala.ocupacaoPct)}%`,
+                          backgroundColor: sala.ocupacaoPct > 100 ? '#dc2626' : sala.ocupacaoPct > 80 ? '#f59e0b' : '#10b981',
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* ── Ranking por Turma (ABS + TO) ── */}
