@@ -176,8 +176,8 @@ const CustomPieTooltip = ({ active, payload }: any) => {
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recrutamento' | 'consolidado' }) {
   const [loading, setLoading] = useState(true);
-  const [raw, setRaw] = useState<{ turmas: any[]; colabs: any[]; diario: any[]; salas: any[]; turmaSalas: any[] }>({
-    turmas: [], colabs: [], diario: [], salas: [], turmaSalas: [],
+  const [raw, setRaw] = useState<{ turmas: any[]; colabs: any[]; diario: any[]; salas: any[] }>({
+    turmas: [], colabs: [], diario: [], salas: [],
   });
 
   const [selectedMonth, setSelectedMonth] = useState(() => {
@@ -190,19 +190,17 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
   useEffect(() => {
     async function carregarDados() {
       setLoading(true);
-      const [t, c, d, s, ts] = await Promise.all([
+      const [t, c, d, s] = await Promise.all([
         supabase.from('turmas').select('*, operacoes(nome)'),
         supabase.from('colaboradores').select('*'),
         supabase.from('diario_presenca').select('*'),
         supabase.from('salas').select('*'),
-        supabase.from('turma_salas').select('*').catch(() => ({ data: [] })), // Tabela opcional/histórico de mudanças de sala por período
       ]);
       setRaw({
         turmas: t.data || [],
         colabs: c.data || [],
         diario: d.data || [],
         salas: s.data || [],
-        turmaSalas: ts.data || [],
       });
       setLoading(false);
     }
@@ -327,21 +325,17 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       };
     });
 
-    // ─── PASSO 5: ocupação de salas (Considerando mudanças de sala por período/dia) ─
+    // ─── PASSO 5: ocupação de salas (Lendo a coluna alocacao_salas da tabela turmas) ──
     const salaStats = raw.salas.map((s: any) => {
       let diasEmUso = 0;
       for (let d = new Date(startOfMonth); d <= endOfMonth; d.setDate(d.getDate() + 1)) {
-        // Verifica se em algum momento deste dia `d`, a turma ocupou esta sala `s.nome`
         const isOccupied = filteredTurmas.some((t: any) => {
-          // Procura se há uma mudança de sala específica para esta turma nesta data
-          const alteracaoSala = raw.turmaSalas.find((ts: any) => {
-            if (ts.numero_turma !== t.numero_turma) return false;
+          const alteracaoSala = (t.alocacao_salas || []).find((ts: any) => {
             const tsStart = new Date(ts.data_inicio);
             const tsEnd = ts.data_fim ? new Date(ts.data_fim) : new Date(2099, 11, 31);
             return d >= tsStart && d <= tsEnd;
           });
 
-          // Se houver alteração registrada, usa a sala da alteração; caso contrário, usa a sala principal da turma
           const salaNaData = alteracaoSala ? alteracaoSala.sala : t.sala;
           if (salaNaData !== s.nome) return false;
 
@@ -353,10 +347,9 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
         if (isOccupied) diasEmUso++;
       }
 
-      // Turmas que utilizaram esta sala em algum momento do mês (principal ou via alteração)
       const turmasNaSala = filteredTurmas.filter((t: any) => {
         const usaComoPrincipal = t.sala === s.nome;
-        const usaComoAlteracao = raw.turmaSalas.some((ts: any) => ts.numero_turma === t.numero_turma && ts.sala === s.nome);
+        const usaComoAlteracao = (t.alocacao_salas || []).some((ts: any) => ts.sala === s.nome);
         return usaComoPrincipal || usaComoAlteracao;
       });
 
