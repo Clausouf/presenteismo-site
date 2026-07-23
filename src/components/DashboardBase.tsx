@@ -176,8 +176,8 @@ const CustomPieTooltip = ({ active, payload }: any) => {
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recrutamento' | 'consolidado' }) {
   const [loading, setLoading] = useState(true);
-  const [raw, setRaw] = useState<{ turmas: any[]; colabs: any[]; diario: any[]; salas: any[] }>({
-    turmas: [], colabs: [], diario: [], salas: [],
+  const [raw, setRaw] = useState<{ turmas: any[]; colabs: any[]; diario: any[]; salas: any[]; turmaSalas: any[] }>({
+    turmas: [], colabs: [], diario: [], salas: [], turmaSalas: [],
   });
 
   const [selectedMonth, setSelectedMonth] = useState(() => {
@@ -190,17 +190,19 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
   useEffect(() => {
     async function carregarDados() {
       setLoading(true);
-      const [t, c, d, s] = await Promise.all([
+      const [t, c, d, s, ts] = await Promise.all([
         supabase.from('turmas').select('*, operacoes(nome)'),
         supabase.from('colaboradores').select('*'),
         supabase.from('diario_presenca').select('*'),
         supabase.from('salas').select('*'),
+        supabase.from('turma_salas').select('*').catch(() => ({ data: [] })), // Tabela opcional/histórico de mudanças de sala por período
       ]);
       setRaw({
         turmas: t.data || [],
         colabs: c.data || [],
         diario: d.data || [],
         salas: s.data || [],
+        turmaSalas: ts.data || [],
       });
       setLoading(false);
     }
@@ -241,7 +243,6 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
         const totalDiasEsperados = logs.length;
         const logsNormalized = logs.map((l: any) => normalize(l.tipo_registro));
 
-        // ATUALIZAÇÃO: Incluindo desligamento e desistência no cálculo de ABS
         const countAbs = logsNormalized.filter((t: string) =>
           t.includes('falta') || t.includes('desligamento') || t.includes('desistencia')
         ).length;
@@ -268,7 +269,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
         };
       });
 
-    // ─── PASSO 2: turmas que têm ao menos 1 pessoa da categoria (ou todas se consolidado) ──────────────
+    // ─── PASSO 2: turmas com categoria correspondente ─────────────────────────
     const turmasComCategoria = new Set(
       tipo === 'consolidado'
         ? metricsAll.map(m => m.turma)
@@ -285,7 +286,6 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       
       const totalDiasEsperadosTurma = todosDaTurma.reduce((acc, m) => acc + m.totalDiasEsperados, 0);
       
-      // No consolidado, o atestado entra como abs no cálculo total de abs
       const absCategoria = categoriaDaTurma.reduce((acc, m) => acc + m.countAbs + (tipo === 'consolidado' ? m.countAtestado : 0), 0);
       const atestadoCategoria = categoriaDaTurma.reduce((acc, m) => acc + m.countAtestado, 0);
 
@@ -305,13 +305,12 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       };
     }).sort((a, b) => b.abs - a.abs);
 
-    // ─── PASSO 4: métricas globais ────────────────────────────────────────────────
     const totalDiasGlobal = rankingTurmas.reduce((acc, t) => acc + t._diasRaw, 0);
     const totalAbsGlobal  = rankingTurmas.reduce((acc, t) => acc + t._absRaw,  0);
     const totalOpGlobal   = rankingTurmas.reduce((acc, t) => acc + t._opRaw,   0);
     const totalToGlobal   = rankingTurmas.reduce((acc, t) => acc + t._toRaw,   0);
 
-    // ─── PASSO 5: ranking por operação ───────────────────────────────────────────
+    // ─── PASSO 4: ranking por operação ───────────────────────────────────────────
     const opsUnicas = [...new Set(rankingTurmas.map(t => t.op))];
     const ranking = opsUnicas.map(op => {
       const turmasDaOp = rankingTurmas.filter(t => t.op === op);
@@ -328,19 +327,39 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       };
     });
 
-    // ─── PASSO 6: ocupação de salas ───────────────────────────────────────────
+    // ─── PASSO 5: ocupação de salas (Considerando mudanças de sala por período/dia) ─
     const salaStats = raw.salas.map((s: any) => {
       let diasEmUso = 0;
       for (let d = new Date(startOfMonth); d <= endOfMonth; d.setDate(d.getDate() + 1)) {
+        // Verifica se em algum momento deste dia `d`, a turma ocupou esta sala `s.nome`
         const isOccupied = filteredTurmas.some((t: any) => {
-          if (t.sala !== s.nome) return false;
+          // Procura se há uma mudança de sala específica para esta turma nesta data
+          const alteracaoSala = raw.turmaSalas.find((ts: any) => {
+            if (ts.numero_turma !== t.numero_turma) return false;
+            const tsStart = new Date(ts.data_inicio);
+            const tsEnd = ts.data_fim ? new Date(ts.data_fim) : new Date(2099, 11, 31);
+            return d >= tsStart && d <= tsEnd;
+          });
+
+          // Se houver alteração registrada, usa a sala da alteração; caso contrário, usa a sala principal da turma
+          const salaNaData = alteracaoSala ? alteracaoSala.sala : t.sala;
+          if (salaNaData !== s.nome) return false;
+
           const start = new Date(t.data_inicio);
           const end = t.data_fim ? new Date(t.data_fim) : new Date(2099, 11, 31);
           return d >= start && d <= end;
         });
+
         if (isOccupied) diasEmUso++;
       }
-      const turmasNaSala = filteredTurmas.filter((t: any) => t.sala === s.nome);
+
+      // Turmas que utilizaram esta sala em algum momento do mês (principal ou via alteração)
+      const turmasNaSala = filteredTurmas.filter((t: any) => {
+        const usaComoPrincipal = t.sala === s.nome;
+        const usaComoAlteracao = raw.turmaSalas.some((ts: any) => ts.numero_turma === t.numero_turma && ts.sala === s.nome);
+        return usaComoPrincipal || usaComoAlteracao;
+      });
+
       const totalOperadoresSala = metricsAll.filter(m => turmasNaSala.some((t: any) => t.numero_turma === m.turma)).length;
       return {
         name: s.nome,
@@ -350,7 +369,7 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       };
     }).filter((s: any) => s.dias > 0);
 
-    // ─── PASSO 7: dados para exportação Excel ────────────────────────────────
+    // ─── PASSO 6: dados para exportação Excel ────────────────────────────────
     const resumoRows: (string | number)[][] = [
       ['Dashboard', tipo.toUpperCase()],
       ['Período', selectedMonth],
@@ -728,11 +747,11 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
           </div>
         </div>
 
-        {/* ── Ensalamento e Ocupação de Salas (Por último na página) ── */}
+        {/* ── Ensalamento e Ocupação de Salas ── */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
           <div className="mb-4">
             <h2 className="text-sm font-bold text-gray-800">Ensalamento e Ocupação de Salas</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Ocupação das salas em utilização durante o mês</p>
+            <p className="text-xs text-gray-400 mt-0.5">Ocupação das salas em utilização durante o mês (considerando mudanças de sala)</p>
           </div>
           {data.salaStats.length === 0 ? (
             <p className="text-xs text-gray-500 text-center py-8">Nenhuma sala em uso no período selecionado.</p>
