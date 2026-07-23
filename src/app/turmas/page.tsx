@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   Trash2, ChevronDown, BookOpen, Clock, MapPin, User,
@@ -41,8 +41,7 @@ function OperadorModal({ colab, onClose }: { colab: any; onClose: () => void }) 
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/45"
       onClick={onClose}
     >
       <div
@@ -52,7 +51,7 @@ function OperadorModal({ colab, onClose }: { colab: any; onClose: () => void }) 
         <div className="bg-gradient-to-r from-slate-800 to-slate-700 px-5 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center">
-              <User className="w-5 h-5 text-white" />
+              <User className="w-5 h-5 text-white"/>
             </div>
             <div>
               <p className="text-white font-bold text-sm leading-tight">{colab.nome}</p>
@@ -63,14 +62,14 @@ function OperadorModal({ colab, onClose }: { colab: any; onClose: () => void }) 
             onClick={onClose}
             className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-all"
           >
-            <X className="w-4 h-4" />
+            <X className="w-4 h-4"/>
           </button>
         </div>
 
         <div className="px-5 py-4 space-y-3">
           <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
             <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <CreditCard className="w-4 h-4 text-blue-600" />
+              <CreditCard className="w-4 h-4 text-blue-600"/>
             </div>
             <div>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Matrícula</p>
@@ -80,7 +79,7 @@ function OperadorModal({ colab, onClose }: { colab: any; onClose: () => void }) 
 
           <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
             <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <Briefcase className="w-4 h-4 text-emerald-600" />
+              <Briefcase className="w-4 h-4 text-emerald-600"/>
             </div>
             <div>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Jornada</p>
@@ -90,7 +89,7 @@ function OperadorModal({ colab, onClose }: { colab: any; onClose: () => void }) 
 
           <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
             <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <Timer className="w-4 h-4 text-amber-600" />
+              <Timer className="w-4 h-4 text-amber-600"/>
             </div>
             <div>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Grupo 30h</p>
@@ -118,11 +117,11 @@ function OperadorModal({ colab, onClose }: { colab: any; onClose: () => void }) 
 
 // ── MODAL DE EDIÇÃO DA TURMA ─────────────────────────────────────────────────
 function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { turma: any; colaboradoresAtuais: any[]; onClose: () => void; onSave: () => void }) {
+  const [numeroTurma, setNumeroTurma] = useState(turma.numero_turma || '');
   const [sala, setSala] = useState(turma.sala || '');
   const [dataInicio, setDataInicio] = useState(turma.data_inicio || '');
   const [dataFim, setDataFim] = useState(turma.data_fim || '');
   
-  // Novo estado para múltiplos períodos de salas (alocacao_salas JSON)
   const [alocacaoSalas, setAlocacaoSalas] = useState<any[]>(Array.isArray(turma.alocacao_salas) ? turma.alocacao_salas : []);
   const [novaSalaPeriodo, setNovaSalaPeriodo] = useState('');
   const [novaSalaInicio, setNovaSalaInicio] = useState('');
@@ -135,7 +134,6 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
   const [grupo30Op, setGrupo30Op] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Estados para listagem de salas e gestão dos operadores atuais
   const [salasDisponiveis, setSalasDisponiveis] = useState<string[]>([]);
   const [colabsAtuais, setColabsAtuais] = useState<any[]>(colaboradoresAtuais || []);
 
@@ -210,21 +208,65 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
   const handleSalvarEdicao = async () => {
     setLoading(true);
     try {
-      const { error: errTurma } = await supabase
-        .from('turmas')
-        .update({
-          sala: sala,
-          data_inicio: dataInicio,
-          data_fim: dataFim,
-          alocacao_salas: alocacaoSalas,
-        })
-        .eq('numero_turma', turma.numero_turma);
+      const novoNumero = numeroTurma.trim();
+      if (!novoNumero) {
+        throw new Error('O número/nome da turma não pode estar vazio.');
+      }
 
-      if (errTurma) throw new Error('Erro ao atualizar turma: ' + errTurma.message);
+      const antigoNumero = turma.numero_turma;
+
+      if (novoNumero !== antigoNumero) {
+        const { data: existe } = await supabase
+          .from('turmas')
+          .select('numero_turma')
+          .eq('numero_turma', novoNumero)
+          .maybeSingle();
+
+        if (existe) {
+          throw new Error('Já existe uma turma cadastrada com este número/nome.');
+        }
+
+        const { error: errIns } = await supabase
+          .from('turmas')
+          .insert({
+            numero_turma: novoNumero,
+            operacao_id: turma.operacao_id,
+            responsavel_matricula: turma.responsavel_matricula,
+            horario: turma.horario,
+            status: turma.status,
+            sala: sala,
+            data_inicio: dataInicio,
+            data_fim: dataFim,
+            alocacao_salas: alocacaoSalas,
+          });
+
+        if (errIns) throw new Error('Erro ao criar nova turma com o novo número: ' + errIns.message);
+
+        await supabase.from('colaboradores').update({ numero_turma: novoNumero }).eq('numero_turma', antigoNumero);
+        await supabase.from('diario_presenca').update({ numero_turma: novoNumero }).eq('numero_turma', antigoNumero);
+        await supabase.from('turma_observacoes').update({ numero_turma: novoNumero }).eq('numero_turma', antigoNumero);
+
+        const { error: errDel } = await supabase.from('turmas').delete().eq('numero_turma', antigoNumero);
+        if (errDel) throw new Error('Erro ao remover turma antiga: ' + errDel.message);
+
+      } else {
+        const { error: errTurma } = await supabase
+          .from('turmas')
+          .update({
+            sala: sala,
+            data_inicio: dataInicio,
+            data_fim: dataFim,
+            alocacao_salas: alocacaoSalas,
+          })
+          .eq('numero_turma', antigoNumero);
+
+        if (errTurma) throw new Error('Erro ao atualizar turma: ' + errTurma.message);
+      }
 
       if (novosOperadores.length > 0) {
+        const targetTurma = novoNumero;
         const payloadColabs = novosOperadores.map(op => ({
-          numero_turma: turma.numero_turma,
+          numero_turma: targetTurma,
           matricula: op.matricula,
           nome: op.nome,
           jornada: op.jornada,
@@ -261,22 +303,33 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
         <div className="bg-gradient-to-r from-slate-800 to-slate-700 px-5 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center">
-              <Pencil className="w-5 h-5 text-white" />
+              <Pencil className="w-5 h-5 text-white"/>
             </div>
             <div>
               <p className="text-white font-bold text-sm leading-tight">Editar Turma {turma.numero_turma}</p>
-              <p className="text-slate-400 text-xs mt-0.5">Altere sala, datas e gerencie operadores</p>
+              <p className="text-slate-400 text-xs mt-0.5">Altere número/nome, sala, datas e gerencie operadores</p>
             </div>
           </div>
           <button
             onClick={onClose}
             className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-all"
           >
-            <X className="w-4 h-4" />
+            <X className="w-4 h-4"/>
           </button>
         </div>
 
         <div className="p-5 space-y-4 overflow-y-auto flex-1">
+          <div>
+            <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1">Número / Nome da Turma</label>
+            <input
+              type="text"
+              value={numeroTurma}
+              onChange={(e) => setNumeroTurma(e.target.value)}
+              placeholder="Ex: 01, T01..."
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs text-gray-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-300"
+            />
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
               <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1">Sala Principal</label>
@@ -294,7 +347,7 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
                     <option value={sala}>{sala}</option>
                   )}
                 </select>
-                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none"/>
               </div>
             </div>
             <div>
@@ -319,10 +372,9 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
 
           <hr className="border-gray-100 my-2" />
 
-          {/* ── GERENCIAMENTO DE MÚLTIPLOS PERÍODOS DE SALAS ── */}
           <div>
             <h3 className="text-xs font-bold text-gray-800 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-              <MapPin className="w-3.5 h-3.5 text-blue-600" /> Períodos de Salas (Cronograma)
+              <MapPin className="w-3.5 h-3.5 text-blue-600"/> Períodos de Salas (Cronograma)
             </h3>
             
             <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 space-y-3">
@@ -366,7 +418,7 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
                   onClick={handleAddSalaPeriodo}
                   className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1 shadow-sm"
                 >
-                  <Plus className="w-3.5 h-3.5" /> Adicionar Período de Sala
+                  <Plus className="w-3.5 h-3.5"/> Adicionar Período de Sala
                 </button>
               </div>
             </div>
@@ -387,7 +439,7 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
                         className="text-rose-500 hover:text-rose-700 p-1 rounded transition-colors"
                         title="Remover período"
                       >
-                        <X className="w-3.5 h-3.5" />
+                        <X className="w-3.5 h-3.5"/>
                       </button>
                     </div>
                   ))}
@@ -398,10 +450,9 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
 
           <hr className="border-gray-100 my-2" />
 
-          {/* ── LISTAGEM E EXCLUSÃO DE OPERADORES JÁ ADICIONADOS ── */}
           <div>
             <h3 className="text-xs font-bold text-gray-800 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-              <User className="w-3.5 h-3.5 text-blue-600" /> Operadores Atuais na Turma ({colabsAtuais.length})
+              <User className="w-3.5 h-3.5 text-blue-600"/> Operadores Atuais na Turma ({colabsAtuais.length})
             </h3>
             {colabsAtuais.length === 0 ? (
               <p className="text-xs text-gray-400 italic mb-3">Nenhum operador cadastrado nesta turma.</p>
@@ -420,7 +471,7 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
                       className="text-rose-500 hover:text-rose-700 p-1 rounded transition-colors"
                       title="Excluir operador"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="w-3.5 h-3.5"/>
                     </button>
                   </div>
                 ))}
@@ -432,7 +483,7 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
 
           <div>
             <h3 className="text-xs font-bold text-gray-800 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-              <Plus className="w-3.5 h-3.5 text-blue-600" /> Adicionar Novos Operadores
+              <Plus className="w-3.5 h-3.5 text-blue-600"/> Adicionar Novos Operadores
             </h3>
             
             <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 space-y-3">
@@ -485,7 +536,7 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
                     onClick={handleAddLocalOperador}
                     className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1 shadow-sm"
                   >
-                    <Plus className="w-3.5 h-3.5" /> Adicionar à Lista
+                    <Plus className="w-3.5 h-3.5"/> Adicionar à Lista
                   </button>
                 </div>
               </div>
@@ -508,7 +559,7 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
                         className="text-rose-500 hover:text-rose-700 p-1 rounded transition-colors"
                         title="Remover da lista"
                       >
-                        <X className="w-3.5 h-3.5" />
+                        <X className="w-3.5 h-3.5"/>
                       </button>
                     </div>
                   ))}
@@ -590,10 +641,7 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
   return (
     <>
       {operadorSelecionado && (
-        <OperadorModal
-          colab={operadorSelecionado}
-          onClose={() => setOperadorSelecionado(null)}
-        />
+        <OperadorModal colab={operadorSelecionado} onClose={() => setOperadorSelecionado(null)} />
       )}
 
       {editModalOpen && (
@@ -611,7 +659,7 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
         <div className="px-5 py-4 bg-gradient-to-r from-slate-800 to-slate-700 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0">
-              <BookOpen className="w-5 h-5 text-white" />
+              <BookOpen className="w-5 h-5 text-white"/>
             </div>
             <div className="min-w-0">
               <h2 className="text-white font-bold text-base leading-tight truncate">
@@ -621,16 +669,16 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
               <div className="flex flex-wrap items-center gap-3 mt-1">
                 {turma.sala && (
                   <span className="flex items-center gap-1 text-slate-300 text-xs">
-                    <MapPin className="w-3 h-3" /> {turma.sala}
+                    <MapPin className="w-3 h-3"/> {turma.sala}
                   </span>
                 )}
                 {turma.horario && (
                   <span className="flex items-center gap-1 text-slate-300 text-xs">
-                    <Clock className="w-3 h-3" /> {turma.horario.substring(0, 5)}
+                    <Clock className="w-3 h-3"/> {turma.horario.substring(0, 5)}
                   </span>
                 )}
                 <span className="flex items-center gap-1 text-slate-300 text-xs">
-                  <User className="w-3 h-3" /> {colaboradores.length} operador{colaboradores.length !== 1 ? 'es' : ''}
+                  <User className="w-3 h-3"/> {colaboradores.length} operador{colaboradores.length !== 1 ? 'es' : ''}
                 </span>
               </div>
             </div>
@@ -655,7 +703,7 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
               className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-all"
               title="Editar Turma"
             >
-              <Pencil className="w-4 h-4" />
+              <Pencil className="w-4 h-4"/>
             </button>
 
             <button
@@ -663,7 +711,7 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
               className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-rose-500/80 text-white/70 hover:text-white transition-all"
               title="Excluir Turma"
             >
-              <Trash2 className="w-4 h-4" />
+              <Trash2 className="w-4 h-4"/>
             </button>
           </div>
         </div>
@@ -704,7 +752,7 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
                         {c.nome}
                       </span>
                       <span className="w-4 h-4 flex items-center justify-center rounded-full bg-gray-100 group-hover/btn:bg-blue-100 transition-colors flex-shrink-0">
-                        <User className="w-2.5 h-2.5 text-gray-400 group-hover/btn:text-blue-500" />
+                        <User className="w-2.5 h-2.5 text-gray-400 group-hover/btn:text-blue-500"/>
                       </span>
                     </button>
                   </td>
@@ -739,7 +787,7 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
               <tr className="bg-rose-50/60 border-t-2 border-rose-100">
                 <td className="px-4 py-2.5 sticky left-0 bg-rose-50/60 z-10">
                   <div className="flex items-center gap-1.5">
-                    <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-500"/>
                     <span className="text-xs font-bold text-rose-700">ABS (%)</span>
                   </div>
                 </td>
@@ -757,7 +805,7 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
               <tr className="bg-slate-50/60 border-t border-slate-100">
                 <td className="px-4 py-2.5 sticky left-0 bg-slate-50/60 z-10">
                   <div className="flex items-center gap-1.5">
-                    <TrendingDown className="w-3.5 h-3.5 text-slate-500" />
+                    <TrendingDown className="w-3.5 h-3.5 text-slate-500"/>
                     <span className="text-xs font-bold text-slate-600">Deslig./Desist. (%)</span>
                   </div>
                 </td>
@@ -783,7 +831,7 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
             className="w-full flex items-center justify-between px-5 py-3.5 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
           >
             <div className="flex items-center gap-2">
-              <MessageSquare className="w-4 h-4 text-gray-500" />
+              <MessageSquare className="w-4 h-4 text-gray-500"/>
               <span className="text-sm font-semibold text-gray-700">Observações</span>
               {observacoes.length > 0 && (
                 <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
@@ -807,7 +855,7 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
                   onClick={handleSalvarObs}
                   className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-4 h-4"/>
                   Salvar Observação
                 </button>
               </div>
@@ -821,9 +869,9 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5 mb-1">
-                          <Calendar className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                          <Calendar className="w-3 h-3 text-gray-400 flex-shrink-0"/>
                           <span className="text-[10px] text-gray-400 font-medium">
-                            <FormattedDate dateString={obs.created_at} />
+                            <FormattedDate dateString={obs.created_at}/>
                           </span>
                         </div>
                         <p className="text-xs text-gray-700 leading-relaxed">{obs.texto}</p>
@@ -832,7 +880,7 @@ function TabelaTurma({ turma, responsavelNome, colaboradores, presencas, obsInic
                         onClick={() => handleDeleteObs(obs.id)}
                         className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-gray-300 hover:text-rose-500 hover:bg-rose-50 transition-all opacity-0 group-hover/obs:opacity-100"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-3.5 h-3.5"/>
                       </button>
                     </div>
                   ))}
@@ -951,7 +999,7 @@ export default function DiarioPresencaPage() {
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
           <div className="flex items-center gap-2 mb-4">
             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <BookOpen className="w-4 h-4 text-white" />
+              <BookOpen className="w-4 h-4 text-white"/>
             </div>
             <div>
               <h1 className="text-base font-bold text-gray-900">Diário de Presença</h1>
@@ -972,7 +1020,7 @@ export default function DiarioPresencaPage() {
                     <option key={op.id} value={op.id}>{op.nome}</option>
                   ))}
                 </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"/>
               </div>
             </div>
 
@@ -990,7 +1038,7 @@ export default function DiarioPresencaPage() {
                     <option key={t.numero_turma} value={t.numero_turma}>Turma {t.numero_turma}</option>
                   ))}
                 </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"/>
               </div>
             </div>
           </div>
@@ -1010,7 +1058,7 @@ export default function DiarioPresencaPage() {
         {!loadingDados && selectedOperacaoId === 'todos' && (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
-              <BookOpen className="w-8 h-8 text-gray-300" />
+              <BookOpen className="w-8 h-8 text-gray-300"/>
             </div>
             <p className="text-base font-semibold text-gray-500">Nenhuma operação selecionada</p>
             <p className="text-sm text-gray-400 mt-1">Selecione uma operação no filtro acima para visualizar as turmas.</p>
@@ -1020,7 +1068,7 @@ export default function DiarioPresencaPage() {
         {!loadingDados && turmasVisiveis.length === 0 && selectedOperacaoId !== 'todos' && (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
-              <AlertCircle className="w-8 h-8 text-gray-300" />
+              <AlertCircle className="w-8 h-8 text-gray-300"/>
             </div>
             <p className="text-base font-semibold text-gray-500">Nenhuma turma encontrada</p>
             <p className="text-sm text-gray-400 mt-1">Não há turmas com dados para esta operação.</p>
@@ -1036,7 +1084,7 @@ export default function DiarioPresencaPage() {
             <TabelaTurma
               key={numTurma}
               turma={turmaObj}
-              responsavelNome={resp?.nome || ''}
+              responsavelNome={resp?.nome}
               colaboradores={dadosDasTurmas[numTurma].colabs}
               presencas={dadosDasTurmas[numTurma].presencas}
               obsInicial={dadosDasTurmas[numTurma].obs}
