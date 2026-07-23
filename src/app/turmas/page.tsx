@@ -122,6 +122,12 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
   const [dataInicio, setDataInicio] = useState(turma.data_inicio || '');
   const [dataFim, setDataFim] = useState(turma.data_fim || '');
   
+  // Novo estado para múltiplos períodos de salas (alocacao_salas JSON)
+  const [alocacaoSalas, setAlocacaoSalas] = useState<any[]>(Array.isArray(turma.alocacao_salas) ? turma.alocacao_salas : []);
+  const [novaSalaPeriodo, setNovaSalaPeriodo] = useState('');
+  const [novaSalaInicio, setNovaSalaInicio] = useState('');
+  const [novaSalaFim, setNovaSalaFim] = useState('');
+
   const [novosOperadores, setNovosOperadores] = useState<any[]>([]);
   const [nomeOp, setNomeOp] = useState('');
   const [matriculaOp, setMatriculaOp] = useState('');
@@ -143,6 +149,24 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
     }
     carregarSalas();
   }, []);
+
+  const handleAddSalaPeriodo = () => {
+    if (!novaSalaPeriodo.trim() || !novaSalaInicio || !novaSalaFim) {
+      alert('Preencha a sala, a data de início e a data de fim do período.');
+      return;
+    }
+    setAlocacaoSalas([
+      ...alocacaoSalas,
+      { sala: novaSalaPeriodo, data_inicio: novaSalaInicio, data_fim: novaSalaFim }
+    ]);
+    setNovaSalaPeriodo('');
+    setNovaSalaInicio('');
+    setNovaSalaFim('');
+  };
+
+  const handleRemoveSalaPeriodo = (index: number) => {
+    setAlocacaoSalas(alocacaoSalas.filter((_, i) => i !== index));
+  };
 
   const handleRemoveColabAtual = async (matricula: string) => {
     if (!confirm('Deseja realmente excluir este operador da turma?')) return;
@@ -192,6 +216,7 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
           sala: sala,
           data_inicio: dataInicio,
           data_fim: dataFim,
+          alocacao_salas: alocacaoSalas,
         })
         .eq('numero_turma', turma.numero_turma);
 
@@ -254,7 +279,7 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
         <div className="p-5 space-y-4 overflow-y-auto flex-1">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1">Sala</label>
+              <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1">Sala Principal</label>
               <div className="relative">
                 <select
                   value={sala}
@@ -290,6 +315,85 @@ function EditarTurmaModal({ turma, colaboradoresAtuais, onClose, onSave }: { tur
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs text-gray-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-300"
               />
             </div>
+          </div>
+
+          <hr className="border-gray-100 my-2" />
+
+          {/* ── GERENCIAMENTO DE MÚLTIPLOS PERÍODOS DE SALAS ── */}
+          <div>
+            <h3 className="text-xs font-bold text-gray-800 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+              <MapPin className="w-3.5 h-3.5 text-blue-600" /> Períodos de Salas (Cronograma)
+            </h3>
+            
+            <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Sala / Local</label>
+                  <select
+                    value={novaSalaPeriodo}
+                    onChange={(e) => setNovaSalaPeriodo(e.target.value)}
+                    className="w-full appearance-none bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-300 cursor-pointer"
+                  >
+                    <option value="">Selecione...</option>
+                    {salasDisponiveis.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                    <option value="Operação">Operação</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Data Início</label>
+                  <input
+                    type="date"
+                    value={novaSalaInicio}
+                    onChange={(e) => setNovaSalaInicio(e.target.value)}
+                    className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Data Fim</label>
+                  <input
+                    type="date"
+                    value={novaSalaFim}
+                    onChange={(e) => setNovaSalaFim(e.target.value)}
+                    className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleAddSalaPeriodo}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1 shadow-sm"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Adicionar Período de Sala
+                </button>
+              </div>
+            </div>
+
+            {alocacaoSalas.length > 0 && (
+              <div className="mt-3 space-y-1.5">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Períodos cadastrados ({alocacaoSalas.length}):</p>
+                <div className="max-h-32 overflow-y-auto space-y-1 pr-1">
+                  {alocacaoSalas.map((p, idx) => (
+                    <div key={idx} className="flex items-center justify-between bg-blue-50/50 border border-blue-100 px-3 py-1.5 rounded-lg text-xs">
+                      <div>
+                        <span className="font-bold text-gray-800">{p.sala}</span>
+                        <span className="text-gray-500 ml-2">({p.data_inicio} até {p.data_fim})</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveSalaPeriodo(idx)}
+                        className="text-rose-500 hover:text-rose-700 p-1 rounded transition-colors"
+                        title="Remover período"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <hr className="border-gray-100 my-2" />
