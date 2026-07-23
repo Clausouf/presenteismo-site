@@ -84,6 +84,25 @@ export default function CalendarioPage() {
     });
   };
 
+  // Retorna a sala correta para a turma em uma data específica considerando múltiplos períodos (alocacao_salas)
+  const getSalaParaData = (turma: any, date: Date | null) => {
+    if (!date) return turma.sala || 'Não definida';
+    if (Array.isArray(turma.alocacao_salas) && turma.alocacao_salas.length > 0) {
+      const ano = date.getFullYear();
+      const mes = String(date.getMonth() + 1).padStart(2, '0');
+      const dia = String(date.getDate()).padStart(2, '0');
+      const dateStr = `${ano}-${mes}-${dia}`;
+
+      const periodo = turma.alocacao_salas.find((p: any) => {
+        return dateStr >= p.data_inicio && dateStr <= p.data_fim;
+      });
+      if (periodo && periodo.sala) {
+        return periodo.sala;
+      }
+    }
+    return turma.sala || 'Não definida';
+  };
+
   // Lista única de operações para mapeamento de cores
   const allOps = [...new Set(turmas.map(t => t.operacoes?.nome || 'Sem Operação'))];
 
@@ -302,6 +321,7 @@ export default function CalendarioPage() {
 
                     // Lê o campo único "horario" do Supabase
                     const horario = formatHorario(t.horario);
+                    const salaAtual = getSalaParaData(t, selectedDay);
 
                     return (
                       <div
@@ -359,7 +379,7 @@ export default function CalendarioPage() {
                             </svg>
                             <div>
                               <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Sala</p>
-                              <p className="text-xs font-semibold text-gray-800">{t.sala || 'Não definida'}</p>
+                              <p className="text-xs font-semibold text-gray-800">{salaAtual}</p>
                             </div>
                           </div>
 
