@@ -325,11 +325,14 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
       };
     });
 
-    // ─── PASSO 5: ocupação de salas (Lendo a coluna alocacao_salas da tabela turmas) ──
+    // ─── PASSO 5: ocupação de salas (Lendo a coluna alocacao_salas da tabela turmas por mês) ──
     const salaStats = raw.salas.map((s: any) => {
       let diasEmUso = 0;
+      const turmasNaSalaSet = new Set<string>();
+
       for (let d = new Date(startOfMonth); d <= endOfMonth; d.setDate(d.getDate() + 1)) {
-        const isOccupied = filteredTurmas.some((t: any) => {
+        let diaOcupado = false;
+        filteredTurmas.forEach((t: any) => {
           const alteracaoSala = (t.alocacao_salas || []).find((ts: any) => {
             const tsStart = new Date(ts.data_inicio);
             const tsEnd = ts.data_fim ? new Date(ts.data_fim) : new Date(2099, 11, 31);
@@ -337,27 +340,26 @@ export default function DashboardBase({ tipo }: { tipo: 'treinamento' | 'recruta
           });
 
           const salaNaData = alteracaoSala ? alteracaoSala.sala : t.sala;
-          if (salaNaData !== s.nome) return false;
+          if (salaNaData !== s.nome) return;
 
           const start = new Date(t.data_inicio);
           const end = t.data_fim ? new Date(t.data_fim) : new Date(2099, 11, 31);
-          return d >= start && d <= end;
+          if (d >= start && d <= end) {
+            diaOcupado = true;
+            turmasNaSalaSet.add(t.numero_turma);
+          }
         });
 
-        if (isOccupied) diasEmUso++;
+        if (diaOcupado) diasEmUso++;
       }
 
-      const turmasNaSala = filteredTurmas.filter((t: any) => {
-        const usaComoPrincipal = t.sala === s.nome;
-        const usaComoAlteracao = (t.alocacao_salas || []).some((ts: any) => ts.sala === s.nome);
-        return usaComoPrincipal || usaComoAlteracao;
-      });
+      const turmasNaSalaArr = Array.from(turmasNaSalaSet);
+      const totalOperadoresSala = metricsAll.filter(m => turmasNaSalaSet.has(m.turma)).length;
 
-      const totalOperadoresSala = metricsAll.filter(m => turmasNaSala.some((t: any) => t.numero_turma === m.turma)).length;
       return {
         name: s.nome,
         dias: diasEmUso,
-        turmas: turmasNaSala.map((t: any) => t.numero_turma),
+        turmas: turmasNaSalaArr,
         operadores: totalOperadoresSala,
       };
     }).filter((s: any) => s.dias > 0);
